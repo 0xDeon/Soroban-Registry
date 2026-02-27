@@ -1,13 +1,10 @@
 //! Integration guide and example handlers for validation middleware
 //!
 //! This module demonstrates how to use the comprehensive validation system
-//! in your API handlers.
-
-#[cfg(test)]
+//! in your API handlers.\n\n#[cfg(test)]
 mod integration_tests {
     use crate::validation::{
-        sanitizers::*, url_validation::*, validators::*, FieldError, Validatable, ValidatedJson,
-        ValidationBuilder,
+        sanitizers::*, url_validation::*, validators::*, FieldError, Validatable, ValidationBuilder,
     };
     use serde::{Deserialize, Serialize};
 
@@ -169,7 +166,7 @@ mod integration_tests {
 
             // Checksum validation: 64 hex chars (SHA-256)
             builder.check_condition(
-                !crate::validation::validators::validate_length(&self.checksum, 64, 64).is_ok(),
+                crate::validation::validators::validate_length(&self.checksum, 64, 64).is_err(),
                 "checksum",
                 "must be 64 hex characters (SHA-256)",
             );
@@ -351,43 +348,3 @@ mod integration_tests {
         assert!(req.validate().is_ok());
     }
 }
-
-/// Documentation of all validation and sanitization functions available
-///
-/// # Core Validators
-/// - `validate_contract_id()` - Stellar contract ID (C + 55 chars)
-/// - `validate_stellar_address()` - Stellar address (G + 55 chars)
-/// - `validate_semver()` - Semantic version X.Y.Z[-prerelease][+build]
-/// - `validate_length()` - String length bounds
-/// - `validate_no_html()` - Detect HTML tags
-/// - `validate_no_xss()` - Detect XSS patterns
-/// - `validate_tags()` - Tag count and length limits
-/// - `validate_url()` - Basic URL format
-/// - `validate_https_url_only()` - HTTPS-only enforcement
-/// - `validate_url_https_only_with_whitelist()` - HTTPS + domain whitelist
-///
-/// # Core Sanitizers
-/// - `sanitize_name()` - Trim, strip HTML, remove control chars
-/// - `sanitize_description()` - Trim, strip HTML, remove control chars
-/// - `strip_html()` - Remove all HTML tags
-/// - `normalize_contract_id()` - Uppercase and trim
-/// - `normalize_stellar_address()` - Uppercase and trim
-/// - `sanitize_tags()` - Apply sanitization to each tag
-/// - `trim()` - Remove leading/trailing whitespace
-/// - `remove_control_chars()` - Remove dangerous control characters
-///
-/// # Security Features
-/// - Validation failures logged per IP with correlation IDs
-/// - Payload size validated (configurable, default 5MB)
-/// - Validation failure rate limiting (configurable, default 20/minute)
-/// - Domain whitelist for URLs (configurable, customizable)
-/// - HTML stripping and XSS pattern detection
-/// - Control character removal to prevent injection
-///
-/// # Configuration
-/// - `MAX_PAYLOAD_SIZE_MB` - Maximum request size (default: 5)
-/// - `VALIDATION_FAILURE_LIMIT` - Max failures before rate limit (default: 20)
-/// - `VALIDATION_FAILURE_WINDOW_SECONDS` - Time window for tracking (default: 60)
-/// - `ALLOWED_DOMAINS` - Comma-separated domain whitelist (default: predefined list)
-///
-pub struct ValidationDocumentation;

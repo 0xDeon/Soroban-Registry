@@ -283,6 +283,7 @@ fn project_exhaustion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn rising(n: usize) -> Vec<ResourceUsage> {
         let base = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
@@ -313,7 +314,7 @@ mod tests {
         let mut mgr = ResourceManager::new();
         let base = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         for i in 0..72_u64 {
-            let noise = ((i % 5) * 25_000) as u64;
+            let noise = (i % 5) * 25_000;
             mgr.record_usage(
                 "cp90",
                 ResourceUsage {

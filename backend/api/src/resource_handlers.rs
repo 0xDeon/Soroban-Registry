@@ -46,11 +46,13 @@ mod tests {
     fn test_state() -> AppState {
         let registry = Registry::new_custom(Some("test".into()), None).unwrap();
         metrics::register_all(&registry).unwrap();
+        let (job_engine, _rx) = soroban_batch::engine::JobEngine::new();
         AppState {
             db: create_test_pool(),
             started_at: Instant::now(),
             cache: Arc::new(CacheLayer::new(CacheConfig::default())),
             registry,
+            job_engine: Arc::new(job_engine),
             is_shutting_down: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             health_monitor_status: crate::health_monitor::HealthMonitorStatus::default(),
             resource_mgr: Arc::new(RwLock::new(ResourceManager::new())),

@@ -116,10 +116,12 @@ mod tests {
 
     #[test]
     fn test_ignore_paths() {
-        let mut config = LintConfig::default();
-        config.ignore = Some(IgnoreOptions {
-            paths: Some(vec!["tests/".to_string(), "examples/".to_string()]),
-        });
+        let config = LintConfig {
+            ignore: Some(IgnoreOptions {
+                paths: Some(vec!["tests/".to_string(), "examples/".to_string()]),
+            }),
+            ..LintConfig::default()
+        };
         assert!(config.should_ignore("tests/file.rs"));
         assert!(config.should_ignore("examples/demo.rs"));
         assert!(!config.should_ignore("src/main.rs"));

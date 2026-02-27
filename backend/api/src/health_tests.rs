@@ -1,9 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use chrono::{Duration, Utc};
-    use sqlx::PgPool;
-    use uuid::Uuid;
 
     // Note: These tests require a running database or can be mocked.
     // For this environment, we'll assume integration tests run against a real test DB.
@@ -37,7 +33,7 @@ mod tests {
         score += activity_score;
 
         let security_deduction = 0;
-        score += (10 - security_deduction);
+        score += 10 - security_deduction;
 
         assert_eq!(score, 100);
     }
@@ -63,7 +59,7 @@ mod tests {
         score += activity_score;
 
         let security_deduction = 0;
-        score += (10 - security_deduction);
+        score += 10 - security_deduction;
 
         assert_eq!(score, 20);
     }

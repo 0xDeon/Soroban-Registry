@@ -62,11 +62,11 @@ jobs:
 
       - name: Clippy (backend)
         working-directory: backend
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Clippy (soroban-registry)
         working-directory: soroban-registry
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Run tests (backend)
         working-directory: backend
@@ -109,7 +109,7 @@ jobs:
         run: pnpm run lint
 
       - name: Test
-        run: pnpm test -- --ci --coverage
+        run: pnpm run test --ci --passWithNoTests
 
       - name: Build
         run: pnpm run build

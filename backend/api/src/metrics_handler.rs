@@ -38,13 +38,19 @@ mod tests {
     fn test_state() -> AppState {
         let registry = Registry::new_custom(Some("test".into()), None).unwrap();
         metrics::register_all(&registry).unwrap();
+        let (job_engine, _rx) = soroban_batch::engine::JobEngine::new();
         AppState {
             db: create_test_pool(),
             started_at: Instant::now(),
             cache: Arc::new(CacheLayer::new(CacheConfig::default())),
             registry,
+            job_engine: Arc::new(job_engine),
             is_shutting_down: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             health_monitor_status: crate::health_monitor::HealthMonitorStatus::default(),
+            auth_mgr: Arc::new(RwLock::new(crate::auth::AuthManager::new(
+                "test-secret".to_string(),
+            ))),
+            resource_mgr: Arc::new(RwLock::new(crate::resource_tracking::ResourceManager::new())),
         }
     }
 

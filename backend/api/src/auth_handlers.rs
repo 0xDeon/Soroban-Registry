@@ -111,11 +111,13 @@ mod tests {
             "a".repeat(32), // MIN_JWT_SECRET_LEN
         )));
         let resource_mgr = Arc::new(RwLock::new(ResourceManager::new()));
+        let (job_engine, _rx) = soroban_batch::engine::JobEngine::new();
         AppState {
             db,
             started_at: Instant::now(),
             cache: Arc::new(CacheLayer::new(CacheConfig::default())),
             registry,
+            job_engine: Arc::new(job_engine),
             is_shutting_down: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             health_monitor_status: HealthMonitorStatus::default(),
             auth_mgr,

@@ -11,7 +11,6 @@
 mod tests {
     use crate::validation::{
         sanitizers::*, url_validation::*, validators::*, FieldError, ValidationBuilder,
-        ValidationError,
     };
 
     // ============================================================================

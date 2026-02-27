@@ -3027,7 +3027,8 @@ mod tests {
             .connect_lazy("postgres://postgres:postgres@localhost:5432/soroban_registry")
             .unwrap();
         let registry = Registry::new();
-        let state = AppState::new(db, registry, is_shutting_down);
+        let (job_engine, _rx) = soroban_batch::engine::JobEngine::new();
+        let state = AppState::new(db, registry, Arc::new(job_engine), is_shutting_down);
 
         let (status, json) = health_check(State(state)).await;
 
