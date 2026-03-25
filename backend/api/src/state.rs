@@ -1,7 +1,12 @@
-use std::time::Instant;
-use std::sync::Arc;
+use crate::auth::AuthManager;
+use crate::cache::{CacheConfig, CacheLayer};
+use crate::health_monitor::HealthMonitorStatus;
+use crate::resource_tracking::ResourceManager;
+use prometheus::Registry;
 use sqlx::PgPool;
-use crate::cache::{CacheLayer, CacheConfig};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -9,15 +14,36 @@ pub struct AppState {
     pub db: PgPool,
     pub started_at: Instant,
     pub cache: Arc<CacheLayer>,
+    pub registry: Registry,
+    pub job_engine: Arc<soroban_batch::engine::JobEngine>,
+    pub is_shutting_down: Arc<AtomicBool>,
+    pub health_monitor_status: HealthMonitorStatus,
+    pub auth_mgr: Arc<RwLock<AuthManager>>,
+    pub resource_mgr: Arc<RwLock<ResourceManager>>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool) -> Self {
+    pub fn new(
+        db: PgPool,
+        registry: Registry,
+        job_engine: Arc<soroban_batch::engine::JobEngine>,
+        is_shutting_down: Arc<AtomicBool>,
+    ) -> Self {
         let config = CacheConfig::from_env();
+        let auth_mgr = Arc::new(RwLock::new(
+            AuthManager::from_env().expect("JWT config validated at startup"),
+        ));
+        let resource_mgr = Arc::new(RwLock::new(ResourceManager::new()));
         Self {
             db,
             started_at: Instant::now(),
             cache: Arc::new(CacheLayer::new(config)),
+            registry,
+            job_engine,
+            is_shutting_down,
+            health_monitor_status: HealthMonitorStatus::default(),
+            auth_mgr,
+            resource_mgr,
         }
     }
 }

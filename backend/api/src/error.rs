@@ -14,6 +14,12 @@ pub struct ApiError {
     message: String,
 }
 
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.error, self.message)
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: String,
@@ -41,7 +47,23 @@ impl ApiError {
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", message)
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "InternalServerError",
+            message,
+        )
+    }
+
+    pub fn unprocessable(error: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, error, message)
+    }
+
+    pub fn conflict(error: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, error, message)
+    }
+
+    pub fn db_error(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "DatabaseError", message)
     }
 }
 
@@ -58,10 +80,20 @@ impl IntoResponse for ApiError {
 
         let mut response = (self.status, Json(payload)).into_response();
         if let Ok(value) = HeaderValue::from_str(&correlation_id) {
-            response.headers_mut().insert(header::HeaderName::from_static("x-correlation-id"), value);
+            response
+                .headers_mut()
+                .insert(header::HeaderName::from_static("x-correlation-id"), value);
         }
         response
     }
 }
 
 pub type ApiResult<T> = std::result::Result<T, ApiError>;
+pub type AppError = ApiError;
+
+impl From<sqlx::Error> for ApiError {
+    fn from(e: sqlx::Error) -> Self {
+        tracing::error!(err = %e, "database error");
+        ApiError::internal("Database error")
+    }
+}
