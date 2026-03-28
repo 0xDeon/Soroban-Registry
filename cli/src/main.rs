@@ -449,6 +449,12 @@ pub enum Commands {
         action: KeysCommands,
     },
 
+    /// Contract deployment verification and security scan (#522)
+    Contract {
+        #[command(subcommand)]
+        action: ContractCommands,
+    },
+
     /// Verify multiple contracts in a single atomic batch (all succeed or all rollback)
     BatchVerify {
         /// Comma-separated list of contract IDs to verify.
@@ -835,6 +841,26 @@ pub enum KeysCommands {
         /// Maximum entries to show
         #[arg(long, default_value = "20")]
         limit: usize,
+    },
+}
+
+/// Sub-commands for the `contract` group (#522)
+#[derive(Debug, Subcommand)]
+pub enum ContractCommands {
+    /// Verify a deployed contract's authenticity against the on-chain registry
+    ///
+    /// Usage: soroban-registry contract verify <address> --network <network> [--json]
+    Verify {
+        /// On-chain contract address to verify
+        address: String,
+
+        /// Stellar network (mainnet | testnet | futurenet)
+        #[arg(long, default_value = "mainnet")]
+        network: String,
+
+        /// Output results as machine-readable JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1614,6 +1640,16 @@ async fn main() -> Result<()> {
             WebhookCommands::VerifySig { secret, payload, signature } => {
                 log::debug!("Command: webhook verify-sig");
                 webhook::verify_signature_cmd(&secret, &payload, &signature)?;
+            }
+        },
+        // ── Contract verify command (#522) ───────────────────────────────────
+        Commands::Contract { action } => match action {
+            ContractCommands::Verify { address, network, json } => {
+                log::debug!(
+                    "Command: contract verify | address={} network={} json={}",
+                    address, network, json
+                );
+                contract_verify::run(&cli.api_url, &address, &network, json).await?;
             }
         },
         // ── Release Notes commands ───────────────────────────────────────────
