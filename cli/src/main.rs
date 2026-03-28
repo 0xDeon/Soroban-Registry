@@ -20,9 +20,10 @@ mod migration;
 mod multisig;
 mod package_signing;
 mod patch;
-mod release_notes;
 mod profiler;
+mod release_notes;
 mod sla;
+mod table_format;
 mod test_framework;
 mod webhook;
 mod wizard;
@@ -66,7 +67,7 @@ pub enum Commands {
         verified_only: bool,
         /// Filter by one or more networks (comma-separated: mainnet,testnet,futurenet)
         #[arg(long)]
-        networks: Option<String>,
+        network: Option<String>,
         /// Filter by contract category (e.g. DEX, token, lending, oracle)
         #[arg(long)]
         category: Option<String>,
@@ -935,15 +936,9 @@ pub enum WebhookCommands {
 #[derive(Debug, Subcommand)]
 pub enum MigrateCommands {
     /// Preview migration outcome (dry-run)
-    Preview {
-        old_id: String,
-        new_id: String,
-    },
+    Preview { old_id: String, new_id: String },
     /// Analyze schema differences between versions
-    Analyze {
-        old_id: String,
-        new_id: String,
-    },
+    Analyze { old_id: String, new_id: String },
     /// Generate migration script template (rust|js)
     Generate {
         old_id: String,
@@ -954,15 +949,9 @@ pub enum MigrateCommands {
         output: Option<String>,
     },
     /// Validate migration for data loss risks
-    Validate {
-        old_id: String,
-        new_id: String,
-    },
+    Validate { old_id: String, new_id: String },
     /// Apply migration and record history
-    Apply {
-        old_id: String,
-        new_id: String,
-    },
+    Apply { old_id: String, new_id: String },
     /// Rollback a migration by migration ID
     Rollback { migration_id: String },
     /// Show migration history
@@ -990,9 +979,11 @@ async fn main() -> Result<()> {
     log::debug!("API URL: {}", cli.api_url);
 
     // ── Resolve network ───────────────────────────────────────────────────────
-    let cfg_network = config::resolve_network(cli.network)?;
+    let cfg_network = config::resolve_network(cli.network.clone())?;
     let mut net_str = cfg_network.to_string();
-    if net_str == "auto" { net_str = "mainnet".to_string(); }
+    if net_str == "auto" {
+        net_str = "mainnet".to_string();
+    }
     let network: commands::Network = net_str.parse().unwrap();
     log::debug!("Network: {:?}", network);
 
@@ -1000,13 +991,13 @@ async fn main() -> Result<()> {
         Commands::Search {
             query,
             verified_only,
-            networks,
+            network: filter_networks,
             category,
             limit,
             offset,
             json,
         } => {
-            let networks_vec: Vec<String> = networks
+            let networks_vec: Vec<String> = filter_networks
                 .map(|n| n.split(',').map(|s| s.trim().to_string()).collect())
                 .unwrap_or_default();
             log::debug!(
@@ -1102,7 +1093,11 @@ async fn main() -> Result<()> {
             })
             .await?;
         }
-        Commands::BreakingChanges { old_id, new_id, json } => {
+        Commands::BreakingChanges {
+            old_id,
+            new_id,
+            json,
+        } => {
             log::debug!("Command: breaking-changes | old={} new={}", old_id, new_id);
             commands::breaking_changes(&cli.api_url, &old_id, &new_id, json).await?;
         }
@@ -1112,11 +1107,19 @@ async fn main() -> Result<()> {
         }
         Commands::Migrate { action } => match action {
             MigrateCommands::Preview { old_id, new_id } => {
-                log::debug!("Command: migrate preview | old_id={} new_id={}", old_id, new_id);
+                log::debug!(
+                    "Command: migrate preview | old_id={} new_id={}",
+                    old_id,
+                    new_id
+                );
                 migration::preview(&old_id, &new_id)?;
             }
             MigrateCommands::Analyze { old_id, new_id } => {
-                log::debug!("Command: migrate analyze | old_id={} new_id={}", old_id, new_id);
+                log::debug!(
+                    "Command: migrate analyze | old_id={} new_id={}",
+                    old_id,
+                    new_id
+                );
                 migration::analyze(&old_id, &new_id)?;
             }
             MigrateCommands::Generate {
@@ -1134,11 +1137,19 @@ async fn main() -> Result<()> {
                 migration::generate_template(&old_id, &new_id, &language, output.as_deref())?;
             }
             MigrateCommands::Validate { old_id, new_id } => {
-                log::debug!("Command: migrate validate | old_id={} new_id={}", old_id, new_id);
+                log::debug!(
+                    "Command: migrate validate | old_id={} new_id={}",
+                    old_id,
+                    new_id
+                );
                 migration::validate(&old_id, &new_id)?;
             }
             MigrateCommands::Apply { old_id, new_id } => {
-                log::debug!("Command: migrate apply | old_id={} new_id={}", old_id, new_id);
+                log::debug!(
+                    "Command: migrate apply | old_id={} new_id={}",
+                    old_id,
+                    new_id
+                );
                 migration::apply(&old_id, &new_id)?;
             }
             MigrateCommands::Rollback { migration_id } => {
@@ -1610,12 +1621,19 @@ async fn main() -> Result<()> {
             batch_verify::run_batch_verify(&cli.api_url, &contracts, &initiated_by, json).await?;
         }
         Commands::Webhook { action } => match action {
-            WebhookCommands::Create { url, events, secret } => {
+            WebhookCommands::Create {
+                url,
+                events,
+                secret,
+            } => {
                 let event_list: Vec<String> =
                     events.split(',').map(|s| s.trim().to_string()).collect();
-                log::debug!("Command: webhook create | url={} events={:?}", url, event_list);
-                webhook::create_webhook(&cli.api_url, &url, event_list, secret.as_deref())
-                    .await?;
+                log::debug!(
+                    "Command: webhook create | url={} events={:?}",
+                    url,
+                    event_list
+                );
+                webhook::create_webhook(&cli.api_url, &url, event_list, secret.as_deref()).await?;
             }
             WebhookCommands::List {} => {
                 log::debug!("Command: webhook list");
@@ -1637,7 +1655,11 @@ async fn main() -> Result<()> {
                 log::debug!("Command: webhook retry | delivery_id={}", delivery_id);
                 webhook::retry_delivery(&cli.api_url, &delivery_id).await?;
             }
-            WebhookCommands::VerifySig { secret, payload, signature } => {
+            WebhookCommands::VerifySig {
+                secret,
+                payload,
+                signature,
+            } => {
                 log::debug!("Command: webhook verify-sig");
                 webhook::verify_signature_cmd(&secret, &payload, &signature)?;
             }
@@ -1732,14 +1754,8 @@ async fn main() -> Result<()> {
                 )
                 .await?;
             }
-            ReleaseNotesCommands::List {
-                contract_id,
-                json,
-            } => {
-                log::debug!(
-                    "Command: release-notes list | contract_id={}",
-                    contract_id
-                );
+            ReleaseNotesCommands::List { contract_id, json } => {
+                log::debug!("Command: release-notes list | contract_id={}", contract_id);
                 release_notes::list(&cli.api_url, &contract_id, json).await?;
             }
         },
