@@ -51,6 +51,7 @@ rand = "0.8"
 async-recursion = "1.1.1"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 jsonwebtoken = "9.3.0"
+tokio-tungstenite = { workspace = true }
 regex = "1.10"
 lazy_static = "1.4"
 wasmparser = { workspace = true }
