@@ -162,7 +162,8 @@ where
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or(StatusCode::UNAUTHORIZED)?;
 
-        let auth_manager = AuthManager::from_env().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let auth_manager =
+            AuthManager::from_env().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         auth_manager
             .validate_jwt(auth_header)
             .map_err(|_| StatusCode::UNAUTHORIZED)

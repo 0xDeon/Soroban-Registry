@@ -271,7 +271,8 @@ impl SubscriptionFilter {
         if !self.contract_ids.is_empty() {
             let contract_uuid = event.contract.id.to_string().to_ascii_lowercase();
             let contract_id = event.contract.contract_id.to_ascii_lowercase();
-            if !self.contract_ids.contains(&contract_uuid) && !self.contract_ids.contains(&contract_id)
+            if !self.contract_ids.contains(&contract_uuid)
+                && !self.contract_ids.contains(&contract_id)
             {
                 return false;
             }
@@ -417,7 +418,9 @@ fn authenticate_connection(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let token = bearer.or(access_token.map(str::trim).filter(|value| !value.is_empty()))?;
+    let token = bearer.or(access_token
+        .map(str::trim)
+        .filter(|value| !value.is_empty()))?;
     let auth = state.auth_mgr.read().ok()?;
     auth.validate_jwt(token).ok()
 }
@@ -559,8 +562,8 @@ async fn send_json(
     sender: &mut futures_util::stream::SplitSink<WebSocket, Message>,
     message: &ServerMessage,
 ) -> Result<(), axum::Error> {
-    let payload = serde_json::to_string(message)
-        .expect("server websocket messages should always serialize");
+    let payload =
+        serde_json::to_string(message).expect("server websocket messages should always serialize");
     sender.send(Message::Text(payload.into())).await
 }
 

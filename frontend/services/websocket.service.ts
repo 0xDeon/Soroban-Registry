@@ -49,7 +49,7 @@ export class WebSocketService {
           }
         };
 
-        this.ws.onerror = (event) => {
+        this.ws.onerror = (_event) => {
           const error = new Error('WebSocket connection failed');
           this.errorHandlers.forEach(handler => handler(error));
           reject(error);

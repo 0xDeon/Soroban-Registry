@@ -9,12 +9,10 @@ use uuid::Uuid;
 /// the WARN level but never propagated to the caller.
 pub fn increment_view_count_async(pool: PgPool, contract_id: Uuid) {
     tokio::spawn(async move {
-        let result = sqlx::query(
-            "UPDATE contracts SET view_count = view_count + 1 WHERE id = $1",
-        )
-        .bind(contract_id)
-        .execute(&pool)
-        .await;
+        let result = sqlx::query("UPDATE contracts SET view_count = view_count + 1 WHERE id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await;
 
         if let Err(err) = result {
             tracing::warn!(

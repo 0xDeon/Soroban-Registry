@@ -202,11 +202,11 @@ pub async fn list_contracts(
 
     // Apply client-side sorting if not handled by API
     let sort_by_field = sort_by
-        .map(|s| s.parse::<SortBy>())
+        .map(|s| s.parse::<SortBy>().map_err(|e| anyhow::anyhow!(e)))
         .transpose()?
         .unwrap_or(SortBy::CreatedAt);
     let sort_order_field = sort_order
-        .map(|s| s.parse::<SortOrder>())
+        .map(|s| s.parse::<SortOrder>().map_err(|e| anyhow::anyhow!(e)))
         .transpose()?
         .unwrap_or(SortOrder::Desc);
 

@@ -153,12 +153,15 @@ impl CacheLayer {
         }
 
         // Put to L1
-        self.abi_cache.insert(contract_id.to_string(), abi.clone()).await;
+        self.abi_cache
+            .insert(contract_id.to_string(), abi.clone())
+            .await;
 
         // Put to L2
         if let Some(mut cm) = self.redis_cm.clone() {
             let key = format!("abi:{}", contract_id);
-            let _: redis::RedisResult<()> = cm.set_ex::<String, String, ()>(key, abi, 24 * 3600).await;
+            let _: redis::RedisResult<()> =
+                cm.set_ex::<String, String, ()>(key, abi, 24 * 3600).await;
         }
     }
 

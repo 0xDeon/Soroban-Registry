@@ -1,10 +1,10 @@
+use crate::state::{AppState, RealtimeEvent};
 use axum::{
-    extract::ws::{WebSocketUpgrade, WebSocket},
+    extract::ws::{WebSocket, WebSocketUpgrade},
     extract::State,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
-use crate::state::{AppState, RealtimeEvent};
 
 pub async fn websocket_handler(
     ws: WebSocketUpgrade,
@@ -47,4 +47,3 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
 
     send_task.abort();
 }
-

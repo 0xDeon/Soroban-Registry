@@ -1,14 +1,14 @@
+use crate::{error::ApiResult, handlers::db_internal_error, state::AppState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
 use shared::{
-    AuthClaims, CreateOrganizationRequest, InviteMemberRequest, Organization,
-    OrganizationMember, OrganizationRole, UpdateOrganizationRequest,
+    AuthClaims, CreateOrganizationRequest, InviteMemberRequest, Organization, OrganizationMember,
+    OrganizationRole, UpdateOrganizationRequest,
 };
 use uuid::Uuid;
-use crate::{error::ApiResult, state::AppState, handlers::db_internal_error};
 
 /// Create a new organization
 pub async fn create_organization(
@@ -16,7 +16,10 @@ pub async fn create_organization(
     claims: AuthClaims,
     Json(payload): Json<CreateOrganizationRequest>,
 ) -> ApiResult<(StatusCode, Json<Organization>)> {
-    let mut tx = state.pool.begin().await
+    let mut tx = state
+        .pool
+        .begin()
+        .await
         .map_err(|e| db_internal_error("begin_transaction", e))?;
 
     // 1. Get publisher ID from Stellar address (claims.sub)
@@ -65,7 +68,9 @@ pub async fn create_organization(
     .await
     .map_err(|e| db_internal_error("add_org_admin", e))?;
 
-    tx.commit().await.map_err(|e| db_internal_error("commit_transaction", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| db_internal_error("commit_transaction", e))?;
 
     Ok((StatusCode::CREATED, Json(org)))
 }
@@ -77,15 +82,23 @@ pub async fn get_organization(
     Path(slug_or_id): Path<String>,
 ) -> ApiResult<Json<Organization>> {
     let org_id = Uuid::parse_str(&slug_or_id).ok();
-    
+
     let org = if let Some(id) = org_id {
-        sqlx::query_as!(Organization, "SELECT * FROM organizations WHERE id = $1", id)
-            .fetch_optional(&state.pool)
-            .await
+        sqlx::query_as!(
+            Organization,
+            "SELECT * FROM organizations WHERE id = $1",
+            id
+        )
+        .fetch_optional(&state.pool)
+        .await
     } else {
-        sqlx::query_as!(Organization, "SELECT * FROM organizations WHERE slug = $1", slug_or_id)
-            .fetch_optional(&state.pool)
-            .await
+        sqlx::query_as!(
+            Organization,
+            "SELECT * FROM organizations WHERE slug = $1",
+            slug_or_id
+        )
+        .fetch_optional(&state.pool)
+        .await
     }
     .map_err(|e| db_internal_error("get_organization", e))?
     .ok_or(StatusCode::NOT_FOUND)?;
@@ -253,7 +266,10 @@ pub async fn accept_invitation(
     claims: AuthClaims,
     Path(token): Path<String>,
 ) -> ApiResult<StatusCode> {
-    let mut tx = state.pool.begin().await
+    let mut tx = state
+        .pool
+        .begin()
+        .await
         .map_err(|e| db_internal_error("begin_transaction", e))?;
 
     // 1. Validate invitation
@@ -302,7 +318,9 @@ pub async fn accept_invitation(
     .await
     .map_err(|e| db_internal_error("mark_invite_accepted", e))?;
 
-    tx.commit().await.map_err(|e| db_internal_error("commit_transaction", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| db_internal_error("commit_transaction", e))?;
 
     Ok(StatusCode::OK)
 }

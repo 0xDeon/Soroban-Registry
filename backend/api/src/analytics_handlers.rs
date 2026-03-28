@@ -178,12 +178,13 @@ pub async fn get_contract_analytics(
     .await
     .map_err(|err| db_err("fetch deploy by network", err))?;
 
-    let by_network: serde_json::Value = by_network_rows
-        .into_iter()
-        .fold(serde_json::json!({}), |mut acc, (net, count)| {
-            acc[net] = serde_json::json!(count);
-            acc
-        });
+    let by_network: serde_json::Value =
+        by_network_rows
+            .into_iter()
+            .fold(serde_json::json!({}), |mut acc, (net, count)| {
+                acc[net] = serde_json::json!(count);
+                acc
+            });
 
     // ── Interactor stats ──────────────────────────────────────────────────────
 
@@ -337,20 +338,22 @@ pub async fn get_analytics_summary(
 
     let by_category: Vec<CategoryAnalytics> = category_rows
         .into_iter()
-        .map(|(category, contract_count, total_interactions, total_views)| {
-            let avg = if contract_count > 0 {
-                total_interactions as f64 / contract_count as f64
-            } else {
-                0.0
-            };
-            CategoryAnalytics {
-                category,
-                contract_count,
-                total_interactions,
-                avg_interactions_per_contract: avg,
-                total_views,
-            }
-        })
+        .map(
+            |(category, contract_count, total_interactions, total_views)| {
+                let avg = if contract_count > 0 {
+                    total_interactions as f64 / contract_count as f64
+                } else {
+                    0.0
+                };
+                CategoryAnalytics {
+                    category,
+                    contract_count,
+                    total_interactions,
+                    avg_interactions_per_contract: avg,
+                    total_views,
+                }
+            },
+        )
         .collect();
 
     // ── By network ────────────────────────────────────────────────────────────

@@ -86,7 +86,7 @@ export default function RealtimeProvider({ children }: RealtimeProviderProps) {
     setUnreadCount(0);
   }, []);
 
-  const markAsRead = useCallback((notificationId: string) => {
+  const markAsRead = useCallback((_notificationId: string) => {
     if (unreadCount > 0) {
       setUnreadCount(prev => prev - 1);
     }

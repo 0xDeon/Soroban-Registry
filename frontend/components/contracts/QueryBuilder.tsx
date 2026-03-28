@@ -1,15 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  ChevronRight, 
-  ChevronDown, 
-  Search, 
+import {
+  Plus,
+  Trash2,
+  Search,
   Filter,
-  Save,
-  X
+  Save
 } from 'lucide-react';
 import { 
   QueryNode, 

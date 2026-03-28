@@ -4,6 +4,7 @@ mod backup;
 mod batch_verify;
 mod commands;
 mod config;
+mod contract_verify;
 mod contracts;
 mod conversions;
 mod coverage;
@@ -18,6 +19,7 @@ mod io_utils;
 mod manifest;
 mod migration;
 mod multisig;
+mod network;
 mod package_signing;
 mod patch;
 mod profiler;
@@ -489,6 +491,23 @@ pub enum Commands {
     Cicd {
         #[command(subcommand)]
         action: CicdCommands,
+    },
+
+    /// Check the status of supported Stellar networks
+    Network {
+        #[command(subcommand)]
+        action: NetworkCommands,
+    },
+}
+
+/// Sub-commands for the `network` group
+#[derive(Debug, Subcommand)]
+pub enum NetworkCommands {
+    /// Show status of all supported Stellar networks
+    Status {
+        /// Output results as machine-readable JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1817,6 +1836,14 @@ async fn main() -> Result<()> {
             CicdCommands::Validate { contract_path } => {
                 log::debug!("Command: cicd validate | path={}", contract_path);
                 cicd::validate_env(&contract_path).await?;
+            }
+        },
+
+        // ── Network commands (issue #523) ────────────────────────────────────
+        Commands::Network { action } => match action {
+            NetworkCommands::Status { json } => {
+                log::debug!("Command: network status");
+                network::status(json).await?;
             }
         },
     }

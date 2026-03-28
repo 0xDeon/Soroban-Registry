@@ -629,8 +629,13 @@ pub async fn get_performance_comparison(
 ) -> ApiResult<Json<Value>> {
     let contract_uuid = parse_uuid(&contract_id, "contract")?;
     let limit = params.limit.clamp(1, 25);
-    let items = fetch_comparisons(&state, contract_uuid, params.benchmark_name.as_deref(), limit)
-        .await?;
+    let items = fetch_comparisons(
+        &state,
+        contract_uuid,
+        params.benchmark_name.as_deref(),
+        limit,
+    )
+    .await?;
 
     Ok(Json(json!({
         "contract_id": contract_uuid,
@@ -865,9 +870,15 @@ async fn build_performance_summary(
             .into_iter()
             .map(benchmark_from_row)
             .collect(),
-        metric_snapshots: metric_rows.into_iter().map(metric_snapshot_from_row).collect(),
+        metric_snapshots: metric_rows
+            .into_iter()
+            .map(metric_snapshot_from_row)
+            .collect(),
         trends: trend_rows.into_iter().map(trend_from_row).collect(),
-        regressions: regression_rows.into_iter().map(regression_from_row).collect(),
+        regressions: regression_rows
+            .into_iter()
+            .map(regression_from_row)
+            .collect(),
         comparisons,
         unresolved_alerts,
     })
@@ -961,7 +972,9 @@ fn regression_from_row(row: RegressionRow) -> PerformanceRegression {
         benchmark_name: row.benchmark_name,
         current_version: row.current_version,
         previous_version: row.previous_version,
-        execution_time_regression_percent: row.execution_time_regression_percent.map(decimal_to_f64),
+        execution_time_regression_percent: row
+            .execution_time_regression_percent
+            .map(decimal_to_f64),
         gas_regression_percent: row.gas_regression_percent.map(decimal_to_f64),
         severity: row.severity,
         detected_at: row.detected_at,

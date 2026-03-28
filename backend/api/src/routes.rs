@@ -3,9 +3,9 @@ use crate::openapi;
 use crate::{
     ab_test_handlers, auth, auth_handlers, batch_verify_handlers, breaking_changes,
     canary_handlers, category_handlers, compatibility_testing_handlers, contract_events,
-    custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler,
-    migration_handlers, performance_handlers, resource_handlers, similarity_handlers,
-    simulation_handlers, state::AppState, websocket
+    custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler, migration_handlers,
+    performance_handlers, resource_handlers, similarity_handlers, simulation_handlers,
+    state::AppState, websocket,
 };
 
 use axum::{
@@ -43,14 +43,8 @@ pub fn contract_routes() -> Router<AppState> {
             "/api/contracts/trending",
             get(handlers::get_trending_contracts),
         )
-        .route(
-            "/api/contracts/batch",
-            post(handlers::get_contracts_batch),
-        )
-        .route(
-            "/contracts/batch",
-            post(handlers::get_contracts_batch),
-        )
+        .route("/api/contracts/batch", post(handlers::get_contracts_batch))
+        .route("/contracts/batch", post(handlers::get_contracts_batch))
         .route("/api/contracts/graph", get(handlers::get_contract_graph))
         .route("/api/contracts/:id", get(handlers::get_contract))
         .route(
@@ -232,7 +226,10 @@ pub fn contract_routes() -> Router<AppState> {
 
 pub fn organization_routes() -> Router<AppState> {
     Router::new()
-        .route("/api/organizations", post(org_handlers::create_organization))
+        .route(
+            "/api/organizations",
+            post(org_handlers::create_organization),
+        )
         .route(
             "/api/organizations/:id",
             get(org_handlers::get_organization).patch(org_handlers::update_organization),
@@ -258,8 +255,7 @@ pub fn openapi_routes() -> Router<AppState> {
 
 #[cfg(feature = "openapi")]
 pub fn openapi_routes() -> Router<AppState> {
-    Router::new()
-        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi::ApiDoc::openapi()))
+    Router::new().merge(SwaggerUi::new("/docs").url("/openapi.json", openapi::ApiDoc::openapi()))
 }
 
 pub fn publisher_routes() -> Router<AppState> {
@@ -468,6 +464,8 @@ pub fn admin_routes() -> Router<AppState> {
 }
 
 pub fn websocket_routes() -> Router<AppState> {
-    Router::new()
-        .route("/ws/contracts", axum::routing::get(websocket::websocket_handler))
+    Router::new().route(
+        "/ws/contracts",
+        axum::routing::get(websocket::websocket_handler),
+    )
 }

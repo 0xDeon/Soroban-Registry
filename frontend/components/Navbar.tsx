@@ -1,6 +1,6 @@
 'use client';
 
-import { Package, GitBranch, ChevronDown, BarChart2, Users, Menu, X, Layers, Search, Plus, Bell, Columns2, ShieldCheck, PieChart } from 'lucide-react';
+import { Package, GitBranch, ChevronDown, BarChart2, Users, Menu, X, Layers, Search, Plus, Columns2, ShieldCheck, PieChart, TrendingUp, LogOut, Settings, Zap, Code2, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -43,6 +43,7 @@ function useScrolled(threshold = 8) {
     return scrolled;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function useTrapFocus(ref: React.RefObject<HTMLElement | null>, active: boolean) {
     useEffect(() => {
         if (!active || !ref.current) return;
@@ -72,8 +73,10 @@ function SearchModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
 
     useEffect(() => {
         if (isOpen) {
-            setTimeout(() => inputRef.current?.focus(), 100);
-            setQuery('');
+            setTimeout(() => {
+                inputRef.current?.focus();
+                setQuery('');
+            }, 0);
         }
     }, [isOpen]);
 
@@ -179,7 +182,7 @@ export default function Navbar() {
 
     const [mobileOpen,    setMobileOpen]    = useState(false);
     const [exploreOpen,   setExploreOpen]   = useState(false);
-    const [profileOpen,   setProfileOpen]   = useState(false);
+    const [, setProfileOpen]   = useState(false);
     const [searchOpen,    setSearchOpen]    = useState(false);
 
     const exploreTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -187,7 +190,7 @@ export default function Navbar() {
     const drawerRef      = useRef<HTMLDivElement>(null);
 
     // Close mobile menu on route change
-    useEffect(() => { setMobileOpen(false); }, [pathname]);
+    useEffect(() => { setTimeout(() => setMobileOpen(false), 0); }, [pathname]);
 
     // Prevent body scroll when mobile drawer open
     useEffect(() => {
@@ -207,9 +210,6 @@ export default function Navbar() {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, []);
-
-    const isActive = (href: string) => pathname === href;
-    const isExploreActive = ['/publishers', '/stats', '/templates', '/analytics'].some(p => pathname.startsWith(p));
 
     const isActive = useCallback((href: string) => pathname === href, [pathname]);
     const isExploreActive = EXPLORE_LINKS.some(l => pathname.startsWith(l.href));
