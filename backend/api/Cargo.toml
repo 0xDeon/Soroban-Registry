@@ -18,7 +18,6 @@ shared = { path = "../shared" }
 verifier = { path = "../verifier" }
 
 soroban-batch = { path = "../../soroban-registry/crates/soroban-batch" }
-verifier = { path = "../verifier" }
 axum = { workspace = true, features = ["ws"] }
 tower = { workspace = true }
 tower-http = { workspace = true }
