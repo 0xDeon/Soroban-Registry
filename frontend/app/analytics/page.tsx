@@ -7,7 +7,8 @@ import CategoryDistributionPie from '@/components/analytics/CategoryDistribution
 import DeploymentTrendGraph from '@/components/analytics/DeploymentTrendGraph';
 import NetworkUsageStats from '@/components/analytics/NetworkUsageStats';
 import RecentAdditionsTimeline from '@/components/analytics/RecentAdditionsTimeline';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import DeploymentTimeline from '@/components/analytics/DeploymentTimeline';
+import { AlertCircle, RefreshCw, BarChart3, Clock, LayoutGrid } from 'lucide-react';
 
 export default function AnalyticsDashboard() {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
@@ -73,6 +74,10 @@ export default function AnalyticsDashboard() {
            </div>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="w-full">
+                <DeploymentTimeline initialData={data?.recent_additions as any || []} />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 <div className="col-span-12 lg:col-span-8">
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
