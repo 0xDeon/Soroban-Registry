@@ -113,7 +113,7 @@ async fn build_dependency_tree(
             c.id as resolved_id,
             c.name as resolved_name,
             c.is_verified
-        FROM contract_dependencies cd
+        FROM contract_call_dependencies cd
         LEFT JOIN contracts c ON c.contract_id = cd.callee_contract_id
         WHERE cd.caller_id = $1
         ORDER BY cd.call_volume DESC

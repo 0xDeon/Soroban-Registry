@@ -1,5 +1,6 @@
 use crate::state::{AppState, RealtimeEvent};
 use chrono::Utc;
+use shared::models::Network;
 
 pub fn emit_contract_deployment(
     state: &AppState,
@@ -7,6 +8,7 @@ pub fn emit_contract_deployment(
     contract_name: String,
     publisher: String,
     version: String,
+    network: Network,
 ) {
     let event = RealtimeEvent::ContractDeployed {
         contract_id,
@@ -14,9 +16,10 @@ pub fn emit_contract_deployment(
         publisher,
         version,
         timestamp: Utc::now().to_rfc3339(),
+        network,
     };
 
-    let _ = state.event_broadcaster.send(event);
+    state.contract_events.publish(event);
 }
 
 pub fn emit_contract_update(
@@ -32,7 +35,7 @@ pub fn emit_contract_update(
         timestamp: Utc::now().to_rfc3339(),
     };
 
-    let _ = state.event_broadcaster.send(event);
+    state.contract_events.publish(event);
 }
 
 pub fn emit_cicd_pipeline(
@@ -49,5 +52,5 @@ pub fn emit_cicd_pipeline(
         timestamp: Utc::now().to_rfc3339(),
     };
 
-    let _ = state.event_broadcaster.send(event);
+    state.contract_events.publish(event);
 }

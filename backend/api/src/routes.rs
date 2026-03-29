@@ -1,10 +1,11 @@
 #[cfg(feature = "openapi")]
 use crate::openapi;
 use crate::{
-    ab_test_handlers, auth, auth_handlers, batch_verify_handlers, breaking_changes,
-    canary_handlers, category_handlers, compatibility_testing_handlers, contract_events,
-    custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler, migration_handlers,
-    performance_handlers, resource_handlers, similarity_handlers, state::AppState, websocket,
+    ab_test_handlers, analytics_handlers, auth, auth_handlers, batch_verify_handlers, breaking_changes,
+    canary_handlers, category_handlers, collaborative_reviews, compatibility_testing_handlers,
+    contract_events, custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler,
+    migration_handlers, org_handlers, performance_handlers, resource_handlers, similarity_handlers,
+    simulation_handlers, state::AppState, websocket,
 };
 
 use axum::{
@@ -29,7 +30,6 @@ pub fn auth_routes() -> Router<AppState> {
 
 pub fn contract_routes() -> Router<AppState> {
     Router::new()
-        .route("/ws/contracts", get(contract_events::contracts_websocket))
         .route(
             "/api/contracts",
             get(handlers::list_contracts).post(handlers::publish_contract),
@@ -572,6 +572,26 @@ pub fn admin_routes() -> Router<AppState> {
 pub fn websocket_routes() -> Router<AppState> {
     Router::new().route(
         "/ws/contracts",
-        axum::routing::get(websocket::websocket_handler),
+        axum::routing::get(contract_events::contracts_websocket),
     )
+}
+
+pub fn collaborative_review_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/reviews/collaborative",
+            post(collaborative_reviews::create_collaborative_review),
+        )
+        .route(
+            "/api/reviews/collaborative/:id",
+            get(collaborative_reviews::get_collaborative_review),
+        )
+        .route(
+            "/api/reviews/collaborative/:id/comment",
+            post(collaborative_reviews::add_collaborative_comment),
+        )
+        .route(
+            "/api/reviews/collaborative/:id/status",
+            patch(collaborative_reviews::update_reviewer_status),
+        )
 }

@@ -34,7 +34,7 @@ export default function ContractCard({ contract }: ContractCardProps) {
       .deployment_count === "number"
       ? (contract as Contract & { deployment_count?: number }).deployment_count
       : typeof (contract as Contract & { deployments?: number }).deployments ===
-          "number"
+        "number"
         ? (contract as Contract & { deployments?: number }).deployments
         : "—";
 
@@ -113,11 +113,10 @@ export default function ContractCard({ contract }: ContractCardProps) {
               <span className="truncate">{categoryLabel}</span>
             </span>
             <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border shrink-0 ${
-                contract.is_verified
-                  ? "bg-green-500/10 text-green-500 border-green-500/20"
-                  : "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
-              }`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border shrink-0 ${contract.is_verified
+                ? "bg-green-500/10 text-green-500 border-green-500/20"
+                : "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+                }`}
             >
               <CheckCircle2 className="w-3 h-3" />
               {contract.is_verified ? "verified" : "pending"}

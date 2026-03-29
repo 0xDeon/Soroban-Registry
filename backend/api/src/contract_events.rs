@@ -10,110 +10,35 @@ use axum::response::Response;
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use shared::{Contract, ContractVersion};
+use shared::{Contract, ContractVersion, Network};
 use tokio::sync::broadcast;
 use tokio::time::{interval, MissedTickBehavior};
 use uuid::Uuid;
 
 use crate::auth::AuthClaims;
-use crate::state::AppState;
-
-const DEFAULT_HEARTBEAT_INTERVAL_MS: u64 = 30_000;
-const DEFAULT_RECONNECT_AFTER_MS: u64 = 5_000;
-const DEFAULT_EVENT_BUFFER: usize = 4_096;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ContractEventVisibility {
-    Public,
-    Private,
-}
+use crate::state::{AppState, ContractEventVisibility, RealtimeEvent};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContractEventContract {
-    pub id: Uuid,
-    pub contract_id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub publisher_id: Uuid,
-    pub network: String,
-    pub category: Option<String>,
-    pub tags: Vec<String>,
-    pub wasm_hash: String,
-    pub is_verified: bool,
-}
-
-impl From<&Contract> for ContractEventContract {
-    fn from(contract: &Contract) -> Self {
-        Self {
-            id: contract.id,
-            contract_id: contract.contract_id.clone(),
-            name: contract.name.clone(),
-            description: contract.description.clone(),
-            publisher_id: contract.publisher_id,
-            network: contract.network.to_string(),
-            category: contract.category.clone(),
-            tags: contract.tags.clone(),
-            wasm_hash: contract.wasm_hash.clone(),
-            is_verified: contract.is_verified,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContractEventEnvelope {
-    pub event_type: String,
-    pub visibility: ContractEventVisibility,
-    pub contract: ContractEventContract,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub publisher_address: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_verified: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub changes: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+pub struct ContractEventEnvelope;
 
 impl ContractEventEnvelope {
-    pub fn deployed(contract: &Contract, publisher_address: Option<String>) -> Self {
-        Self {
-            event_type: "contract_deployed".to_string(),
-            visibility: ContractEventVisibility::Public,
-            contract: ContractEventContract::from(contract),
-            timestamp: Utc::now(),
-            publisher_address,
-            version: None,
-            status: None,
-            is_verified: Some(contract.is_verified),
-            changes: None,
-            metadata: None,
+    pub fn version_created(contract: &Contract, version: &ContractVersion) -> RealtimeEvent {
+        RealtimeEvent::VersionCreated {
+            contract_id: contract.contract_id.clone(),
+            version: version.version.clone(),
+            network: contract.network.clone(),
+            timestamp: Utc::now().to_rfc3339(),
         }
     }
 
-    pub fn version_created(contract: &Contract, version: &ContractVersion) -> Self {
-        Self {
-            event_type: "contract_version_created".to_string(),
-            visibility: ContractEventVisibility::Public,
-            contract: ContractEventContract::from(contract),
-            timestamp: Utc::now(),
-            publisher_address: None,
-            version: Some(version.version.clone()),
-            status: None,
-            is_verified: Some(contract.is_verified),
-            changes: None,
-            metadata: Some(serde_json::json!({
-                "version_id": version.id,
-                "wasm_hash": version.wasm_hash,
-                "source_url": version.source_url,
-                "commit_hash": version.commit_hash,
-                "release_notes": version.release_notes,
-            })),
+    pub fn deployed(contract: &Contract, publisher_address: Option<String>) -> RealtimeEvent {
+        RealtimeEvent::ContractDeployed {
+            contract_id: contract.contract_id.clone(),
+            contract_name: contract.name.clone(),
+            publisher: publisher_address.unwrap_or_default(),
+            version: "".to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+            network: contract.network.clone(),
         }
     }
 
@@ -121,18 +46,12 @@ impl ContractEventEnvelope {
         contract: &Contract,
         changes: serde_json::Value,
         visibility: ContractEventVisibility,
-    ) -> Self {
-        Self {
-            event_type: "contract_metadata_updated".to_string(),
+    ) -> RealtimeEvent {
+        RealtimeEvent::MetadataUpdated {
+            contract_id: contract.contract_id.clone(),
+            timestamp: Utc::now().to_rfc3339(),
+            changes,
             visibility,
-            contract: ContractEventContract::from(contract),
-            timestamp: Utc::now(),
-            publisher_address: None,
-            version: None,
-            status: None,
-            is_verified: Some(contract.is_verified),
-            changes: Some(changes),
-            metadata: None,
         }
     }
 
@@ -140,27 +59,27 @@ impl ContractEventEnvelope {
         contract: &Contract,
         status: String,
         is_verified: bool,
-        metadata: Option<serde_json::Value>,
+        details: Option<serde_json::Value>,
         visibility: ContractEventVisibility,
-    ) -> Self {
-        Self {
-            event_type: "contract_status_updated".to_string(),
+    ) -> RealtimeEvent {
+        RealtimeEvent::StatusUpdated {
+            contract_id: contract.contract_id.clone(),
+            status,
+            timestamp: Utc::now().to_rfc3339(),
+            is_verified,
+            details,
             visibility,
-            contract: ContractEventContract::from(contract),
-            timestamp: Utc::now(),
-            publisher_address: None,
-            version: None,
-            status: Some(status),
-            is_verified: Some(is_verified),
-            changes: None,
-            metadata,
         }
     }
 }
 
+const DEFAULT_HEARTBEAT_INTERVAL_MS: u64 = 30_000;
+const DEFAULT_RECONNECT_AFTER_MS: u64 = 5_000;
+const DEFAULT_EVENT_BUFFER: usize = 4_096;
+
 #[derive(Debug)]
 pub struct ContractEventHub {
-    tx: broadcast::Sender<Arc<ContractEventEnvelope>>,
+    tx: broadcast::Sender<RealtimeEvent>,
     next_connection_id: AtomicU64,
     heartbeat_interval: Duration,
     reconnect_after: Duration,
@@ -193,12 +112,12 @@ impl ContractEventHub {
         }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<Arc<ContractEventEnvelope>> {
+    pub fn subscribe(&self) -> broadcast::Receiver<RealtimeEvent> {
         self.tx.subscribe()
     }
 
-    pub fn publish(&self, event: ContractEventEnvelope) {
-        let _ = self.tx.send(Arc::new(event));
+    pub fn publish(&self, event: RealtimeEvent) {
+        let _ = self.tx.send(event);
     }
 
     pub fn next_connection_id(&self) -> u64 {
@@ -267,38 +186,29 @@ impl SubscriptionFilter {
         None
     }
 
-    fn matches(&self, event: &ContractEventEnvelope) -> bool {
-        if !self.contract_ids.is_empty() {
-            let contract_uuid = event.contract.id.to_string().to_ascii_lowercase();
-            let contract_id = event.contract.contract_id.to_ascii_lowercase();
-            if !self.contract_ids.contains(&contract_uuid)
-                && !self.contract_ids.contains(&contract_id)
-            {
-                return false;
-            }
-        }
+    fn matches(&self, event: &RealtimeEvent) -> bool {
+        let (event_contract_id, is_private) = match event {
+            RealtimeEvent::ContractDeployed { contract_id, .. } => (contract_id, false),
+            RealtimeEvent::ContractUpdated { contract_id, .. } => (contract_id, false),
+            RealtimeEvent::CicdPipeline { contract_id, .. } => (contract_id, false),
+            RealtimeEvent::VersionCreated { contract_id, .. } => (contract_id, false),
+            RealtimeEvent::MetadataUpdated { contract_id, visibility, .. } => (
+                contract_id,
+                matches!(visibility, ContractEventVisibility::Private),
+            ),
+            RealtimeEvent::StatusUpdated { contract_id, visibility, .. } => (
+                contract_id,
+                matches!(visibility, ContractEventVisibility::Private),
+            ),
+        };
 
-        if !self.categories.is_empty() {
-            let category = event
-                .contract
-                .category
-                .as_deref()
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            if !self.categories.contains(&category) {
-                return false;
-            }
-        }
-
-        if !self.networks.is_empty()
-            && !self
-                .networks
-                .contains(&event.contract.network.to_ascii_lowercase())
-        {
+        if !self.contract_ids.is_empty() && !self.contract_ids.contains(&event_contract_id.to_ascii_lowercase()) {
             return false;
         }
 
-        if event.visibility == ContractEventVisibility::Private && !self.include_private {
+        // Add category/network filtering if we add those fields to RealtimeEvent
+        
+        if is_private && !self.include_private {
             return false;
         }
 
@@ -345,7 +255,7 @@ enum ServerMessage {
         warning: Option<String>,
     },
     Event {
-        event: Arc<ContractEventEnvelope>,
+        event: RealtimeEvent,
     },
     Heartbeat {
         timestamp: chrono::DateTime<chrono::Utc>,

@@ -39,17 +39,18 @@ pub struct Contract {
     pub updated_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
     pub last_accessed_at: Option<DateTime<Utc>>,
-    #[serde(default)]
+    #[sqlx(default)]
     pub health_score: i32,
-    #[serde(default)]
+    #[sqlx(default)]
     pub is_maintenance: bool,
     /// Groups rows that represent the same logical contract across networks (Issue #43)
-    #[serde(default)]
+    #[sqlx(default)]
     pub logical_id: Option<Uuid>,
     /// Per-network config: { "mainnet": { contract_id, is_verified, min_version, max_version }, ... }
-    #[serde(default)]
+    #[sqlx(default)]
     pub network_configs: Option<serde_json::Value>,
     /// Search relevance score (calculated at runtime)
+    #[sqlx(default)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relevance_score: Option<f64>,
     /// Organization that owns this contract (for private registries)
@@ -167,6 +168,44 @@ pub enum UpgradeStrategy {
     ShadowContract,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema, PartialEq)]
+#[sqlx(type_name = "source_format_type", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+pub enum SourceFormat {
+    Rust,
+    Wasm,
+}
+
+/// Supported source storage backends
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum StorageBackend {
+    Local,
+    S3,
+    Gcs,
+}
+
+impl std::fmt::Display for StorageBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StorageBackend::Local => write!(f, "local"),
+            StorageBackend::S3 => write!(f, "s3"),
+            StorageBackend::Gcs => write!(f, "gcs"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
+pub struct ContractSource {
+    pub id: Uuid,
+    pub contract_version_id: Uuid,
+    pub source_format: SourceFormat,
+    pub storage_backend: String,
+    pub storage_key: String,
+    pub source_hash: String,
+    pub source_size: i64,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Contract version information
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractVersion {
@@ -178,15 +217,19 @@ pub struct ContractVersion {
     pub commit_hash: Option<String>,
     pub release_notes: Option<String>,
     pub created_at: DateTime<Utc>,
+    #[sqlx(default)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_schema: Option<serde_json::Value>,
     /// Optional Ed25519 signature over "{contract_id}:{version}:{wasm_hash}"
+    #[sqlx(default)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
     /// Publisher's public key corresponding to the signature (base64-encoded ed25519 key)
+    #[sqlx(default)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publisher_key: Option<String>,
     /// Signature algorithm identifier (e.g. "ed25519")
+    #[sqlx(default)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature_algorithm: Option<String>,
     /// Structured notes describing what changed in this version (Issue #486)
@@ -671,6 +714,12 @@ pub struct ContractSearchParams {
     pub verified_to: Option<DateTime<Utc>>,
     pub last_accessed_from: Option<DateTime<Utc>>,
     pub last_accessed_to: Option<DateTime<Utc>>,
+    // Weights for ranking
+    pub w_text: Option<f64>,
+    pub w_pop: Option<f64>,
+    pub w_rec: Option<f64>,
+    pub w_rat: Option<f64>,
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
@@ -838,17 +887,7 @@ pub struct SaveFavoriteSearchRequest {
     pub query_json: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
-pub struct ContractSource {
-    pub id: Uuid,
-    pub contract_version_id: Uuid,
-    pub source_format: String,
-    pub storage_backend: String,
-    pub storage_key: String,
-    pub source_hash: String,
-    pub source_size: i64,
-    pub created_at: DateTime<Utc>,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SearchSuggestion {
@@ -1507,17 +1546,7 @@ pub struct RecordPerformanceMetricRequest {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct RecordPerformanceBenchmarkRequest {
-    pub contract_id: String,
-    pub contract_version_id: Option<String>,
-    pub benchmark_name: String,
-    pub execution_time_ms: f64,
-    pub gas_used: i64,
-    pub sample_size: Option<i32>,
-    pub source: Option<String>,
-    pub metadata: Option<serde_json::Value>,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PerformanceBenchmark {
@@ -1585,6 +1614,7 @@ pub struct ContractPerformanceSummaryResponse {
     pub regressions: Vec<PerformanceRegression>,
     pub recent_anomalies: Vec<PerformanceAnomaly>,
     pub recent_alerts: Vec<PerformanceAlert>,
+    pub comparisons: Vec<PerformanceComparisonEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -2575,6 +2605,81 @@ pub struct ContractRecommendationsResponse {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// COLLABORATIVE REVIEWS (Issue #502)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, utoipa::ToSchema)]
+#[sqlx(type_name = "collaborative_review_status", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum CollaborativeReviewStatus {
+    Pending,
+    Approved,
+    ChangesRequested,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
+pub struct CollaborativeReview {
+    pub id: Uuid,
+    pub contract_id: Uuid,
+    pub version: String,
+    pub status: CollaborativeReviewStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
+pub struct CollaborativeReviewer {
+    pub id: Uuid,
+    pub review_id: Uuid,
+    pub user_id: Uuid,
+    pub status: CollaborativeReviewStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
+pub struct CollaborativeComment {
+    pub id: Uuid,
+    pub review_id: Uuid,
+    pub user_id: Uuid,
+    pub content: String,
+    pub line_number: Option<i32>,
+    pub file_path: Option<String>,
+    pub abi_path: Option<String>,
+    pub parent_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct CreateCollaborativeReviewRequest {
+    pub contract_id: Uuid,
+    pub version: String,
+    pub reviewer_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AddCollaborativeCommentRequest {
+    pub content: String,
+    pub line_number: Option<i32>,
+    pub file_path: Option<String>,
+    pub abi_path: Option<String>,
+    pub parent_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct UpdateReviewerStatusRequest {
+    pub status: CollaborativeReviewStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct CollaborativeReviewDetails {
+    pub review: CollaborativeReview,
+    pub reviewers: Vec<CollaborativeReviewer>,
+    pub comments: Vec<CollaborativeComment>,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ADVANCED CONTRACT DEPENDENCIES (issue #417)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -2675,45 +2780,7 @@ pub struct DiffSummary {
     pub breaking_count: i32,
 }
 
-/// Stored release notes generation record
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct ReleaseNotesGenerated {
-    pub id: Uuid,
-    pub contract_id: Uuid,
-    pub version: String,
-    pub previous_version: Option<String>,
-    pub diff_summary: serde_json::Value,
-    pub changelog_entry: Option<String>,
-    pub notes_text: String,
-    pub status: ReleaseNotesStatus,
-    pub generated_by: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub published_at: Option<DateTime<Utc>>,
-}
 
-/// Request to auto-generate release notes for a contract version
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenerateReleaseNotesRequest {
-    pub version: String,
-    pub previous_version: Option<String>,
-    pub source_url: Option<String>,
-    pub changelog_content: Option<String>,
-    pub contract_address: Option<String>,
-}
-
-/// Request to manually edit release notes before publishing
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateReleaseNotesRequest {
-    pub notes_text: String,
-}
-
-/// Request to publish (finalize) release notes
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublishReleaseNotesRequest {
-    #[serde(default = "default_true")]
-    pub update_version_record: bool,
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONTRACT DEPLOYMENT SIMULATION (Issue #256)
@@ -2795,47 +2862,13 @@ fn default_true() -> bool {
     true
 }
 
-/// Full response for generated release notes
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReleaseNotesResponse {
-    pub id: Uuid,
-    pub contract_id: Uuid,
-    pub version: String,
-    pub previous_version: Option<String>,
-    pub diff_summary: DiffSummary,
-    pub changelog_entry: Option<String>,
-    pub notes_text: String,
-    pub status: ReleaseNotesStatus,
-    pub generated_by: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub published_at: Option<DateTime<Utc>>,
-}
+
 
 // ────────────────────────────────────────────────────────────────────────────
 // Contract changelog (release history)
 // ────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ContractChangelogEntry {
-    pub version: String,
-    pub created_at: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit_hash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub release_notes: Option<String>,
-    pub breaking: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub breaking_changes: Vec<String>,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ContractChangelogResponse {
-    pub contract_id: Uuid,
-    pub entries: Vec<ContractChangelogEntry>,
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANALYTICS DASHBOARD (issue #430)
@@ -3025,4 +3058,15 @@ pub struct ReviewVoteResponse {
     pub review_id: i32,
     pub helpful_count: i32,
     pub vote_recorded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct RecordPerformanceBenchmarkRequest {
+    pub benchmark_name: String,
+    pub contract_version_id: Option<String>,
+    pub execution_time_ms: f64,
+    pub gas_used: i64,
+    pub sample_size: Option<i32>,
+    pub source: Option<String>,
+    pub metadata: Option<serde_json::Value>,
 }

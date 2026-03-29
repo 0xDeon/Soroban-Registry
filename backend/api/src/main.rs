@@ -24,6 +24,7 @@ mod batch_verify_handlers;
 mod breaking_changes;
 mod cache;
 mod canary_handlers;
+mod collaborative_reviews;
 mod compatibility_testing_handlers;
 mod contract_events;
 mod contributor_handlers;
@@ -50,6 +51,8 @@ mod migration_handlers;
 mod models;
 mod multisig_handlers;
 mod multisig_routes;
+mod notification_handlers;
+mod notification_routes;
 mod onchain_verification;
 #[cfg(feature = "openapi")]
 mod openapi;
@@ -73,7 +76,7 @@ mod state;
 
 mod type_safety;
 mod validation;
-mod websocket;
+
 
 use anyhow::Result;
 use axum::extract::{Request, State};
@@ -100,15 +103,12 @@ async fn track_in_flight_middleware(
             "Service is shutting down and temporarily unavailable",
         ));
     }
-    crate::metrics::HTTP_IN_FLIGHT.inc();
+    api::metrics::HTTP_IN_FLIGHT.inc();
     let res = next.run(req).await;
-    crate::metrics::HTTP_IN_FLIGHT.dec();
+    api::metrics::HTTP_IN_FLIGHT.dec();
     Ok(res)
 }
 
-use crate::error::ApiError;
-use crate::rate_limit::RateLimitState;
-use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -179,7 +179,7 @@ async fn main() -> Result<()> {
 
     // Create prometheus registry for metrics
     let registry = Registry::new();
-    if let Err(e) = crate::metrics::register_all(&registry) {
+    if let Err(e) = api::metrics::register_all(&registry) {
         tracing::error!("Failed to register metrics: {}", e);
     }
 
@@ -275,6 +275,7 @@ async fn main() -> Result<()> {
         .merge(routes::ab_test_routes())
         .merge(routes::performance_routes())
         .merge(multisig_routes::routes())
+        .merge(routes::collaborative_review_routes())
         .merge(routes::observability_routes())
         .merge(routes::websocket_routes())
         .merge(release_notes_routes::release_notes_routes())

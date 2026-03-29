@@ -7,7 +7,15 @@ export function useToast(): ToastContextValue {
   const context = useContext(ToastContext);
   
   if (!context) {
-    throw new Error('useToast must be used within a ToastProvider');
+    // Return dummy functions if used outside provider (e.g. during SSR/prerender)
+    return {
+      showInfo: () => {},
+      showSuccess: () => {},
+      showWarning: () => {},
+      showError: () => {},
+      removeToast: () => {},
+      toasts: [],
+    };
   }
   
   return context;

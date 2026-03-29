@@ -398,8 +398,8 @@ function ContractDetailsContent() {
                   type="button"
                   onClick={() => setSelectedNetwork(net)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${selectedNetwork === net
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                     } ${!hasConfig ? "opacity-60" : ""}`}
                 >
                   {net}
@@ -409,7 +409,13 @@ function ContractDetailsContent() {
           </div>
 
           <div className="flex gap-2">
-            {/* Publisher actions/links could go here */}
+            <Link
+              href={`/contracts/${id}/review`}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-all shadow-lg shadow-primary/20"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Team Review
+            </Link>
           </div>
         </div>
 
@@ -462,8 +468,8 @@ function ContractDetailsContent() {
                   setTabSearch("");
                 }}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors ${activeTab === tabId
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
                   }`}
               >
                 <Icon className="w-4 h-4" />

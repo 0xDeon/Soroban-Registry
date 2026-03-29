@@ -1,5 +1,9 @@
 pub mod reviews;
 
+use crate::auth::AuthClaims;
+use crate::breaking_changes;
+use chrono::{SecondsFormat, Utc};
+use serde::{Deserialize, Serialize};
 use crate::validation::extractors::ValidatedJson;
 use axum::{
     extract::{
@@ -21,13 +25,14 @@ use shared::{
     ContractDeployment, ContractInteractionResponse, ContractSearchParams, ContractSource,
     ContractVersion,
     CreateContractVersionRequest, CreateInteractionBatchRequest, CreateInteractionRequest,
-    FavoriteSearch, FieldOperator,
-    GraphResponse, InteractionTimeSeriesPoint, InteractionTimeSeriesResponse,
-    InteractionsListResponse, InteractionsQueryParams, Network, NetworkConfig, NetworkEndpoints,
-    NetworkInfo, NetworkListResponse, NetworkStatus, PaginatedResponse, PublishRequest, Publisher,
-    QueryCondition, QueryNode, QueryOperator, SaveFavoriteSearchRequest, SearchSuggestion,
-    SearchSuggestionsResponse, SemVer, TrendingParams, UpdateContractMetadataRequest,
+    DeploymentStats, FavoriteSearch, FieldOperator, GraphResponse, InteractionTimeSeriesPoint,
+    InteractionTimeSeriesResponse, InteractionsListResponse, InteractionsQueryParams,
+    InteractorStats, Network, NetworkConfig, NetworkEndpoints, NetworkInfo, NetworkListResponse,
+    NetworkStatus, PaginatedResponse, PublishRequest, Publisher, QueryCondition, QueryNode,
+    QueryOperator, SaveFavoriteSearchRequest, SearchSuggestion, SearchSuggestionsResponse, SemVer,
+    TimelineEntry, TopUser, TrendingParams, UpdateContractMetadataRequest,
     UpdateContractStatusRequest, VerifyRequest,
+    models::ContractDeployment,
 };
 use sqlx::{Postgres, QueryBuilder};
 use std::collections::{HashMap, HashSet};
@@ -55,11 +60,11 @@ use crate::{
     auth::AuthClaims,
     analytics,
     breaking_changes::{diff_abi, has_breaking_changes, resolve_abi},
-    contract_events::{ContractEventEnvelope, ContractEventVisibility},
+    contract_events::ContractEventEnvelope,
     dependency,
     error::{ApiError, ApiResult},
     onchain_verification::OnChainVerifier,
-    state::AppState,
+    state::{AppState, ContractEventVisibility},
     type_safety::parser::parse_json_spec,
     type_safety::{generate_openapi, to_json, to_yaml},
 };
@@ -86,10 +91,10 @@ fn map_query_rejection(err: QueryRejection) -> ApiError {
 
 fn sort_timestamp_column(sort_by: &shared::SortBy) -> Option<&'static str> {
     match sort_by {
-        shared::SortBy::CreatedAt => Some("c.created_at"),
-        shared::SortBy::UpdatedAt => Some("c.updated_at"),
-        shared::SortBy::VerifiedAt => Some("c.verified_at"),
-        shared::SortBy::LastAccessedAt => Some("c.last_accessed_at"),
+        shared::SortBy::CreatedAt => Some("created_at"),
+        shared::SortBy::UpdatedAt => Some("updated_at"),
+        shared::SortBy::VerifiedAt => Some("verified_at"),
+        shared::SortBy::LastAccessedAt => Some("last_accessed_at"),
         _ => None,
     }
 }
@@ -403,15 +408,7 @@ pub async fn run_network_catalog_refresh(state: AppState) {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    sqlx::Type,
-    utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "contract_audit_event_type", rename_all = "snake_case")]
 #[allow(dead_code)]
 pub enum ContractAuditEventType {
@@ -1192,10 +1189,97 @@ pub async fn list_contracts(
         "DESC"
     };
 
-    let mut qb: QueryBuilder<'_, sqlx::Postgres> = QueryBuilder::new(
-        "SELECT c.* FROM contracts c LEFT JOIN contract_interactions ci ON c.id = ci.contract_id ",
+    let network_list = params
+        .networks
+        .as_ref()
+        .filter(|n| !n.is_empty())
+        .cloned()
+        .or_else(|| params.network.clone().map(|n| vec![n]));
+
+    let cursor = params.cursor.as_ref().and_then(|c| Cursor::decode(c).ok());
+
+    let timestamp_sort_column = match sort_by {
+        shared::SortBy::CreatedAt => Some("created_at"),
+        shared::SortBy::UpdatedAt => Some("updated_at"),
+        shared::SortBy::VerifiedAt => Some("verified_at"),
+        shared::SortBy::LastAccessedAt => Some("last_accessed_at"),
+        _ => None,
+    };
+
+    let (direction_op, id_direction) = if sort_order == shared::SortOrder::Asc {
+        (">", "ASC")
+    } else {
+        ("<", "DESC")
+    };
+
+    // Weights for ranking (configurable via parameters or default)
+    let w_text = params.w_text.unwrap_or(1.0);
+    let w_pop = params.w_pop.unwrap_or(0.5);
+    let w_rec = params.w_rec.unwrap_or(0.3);
+    let w_rat = params.w_rat.unwrap_or(0.4);
+    let w_pers = 0.5; // Weight for personalized boost
+
+    // Build dynamic query with advanced ranking
+    let mut qb = sqlx::QueryBuilder::<'_, sqlx::Postgres>::new("WITH contract_stats AS (\n");
+    qb.push(
+        "    SELECT 
+                c.id,
+                COUNT(DISTINCT ci.id) as interaction_count,
+                COUNT(DISTINCT cv.id) as deployment_count,
+                COALESCE(AVG(r.rating), 0) as avg_rating,
+                COUNT(DISTINCT r.id) as review_count",
     );
-    qb.push("WHERE c.visibility = 'public'");
+
+    if let Some(ref uid) = params.user_id {
+        qb.push(",\n                COUNT(DISTINCT CASE WHEN ci.user_address = ");
+        qb.push_bind(uid);
+        qb.push(" THEN ci.id END) as user_interaction_count");
+    } else {
+        qb.push(",\n                0 as user_interaction_count");
+    }
+
+    qb.push(
+        "\n            FROM contracts c
+            LEFT JOIN contract_interactions ci ON c.id = ci.contract_id
+            LEFT JOIN contract_versions cv ON c.id = cv.contract_id
+            LEFT JOIN reviews r ON c.id = r.contract_id AND r.is_flagged = FALSE
+            GROUP BY c.id
+        ),\n",
+    );
+
+    qb.push("ranked_contracts AS (\n");
+    qb.push("    SELECT \n");
+    qb.push("        c.*, \n");
+    qb.push(
+        "        (
+            weights.w_text * ts_rank_cd(c.search_document, tsquery, 32) +
+            weights.w_pop * log(1 + cs.interaction_count) +
+            weights.w_rec * (1.0 / (1.0 + extract(epoch from now() - c.created_at) / 86400.0)) +
+            weights.w_rat * cs.avg_rating +
+            weights.w_pers * log(1 + cs.user_interaction_count)
+        ) as relevance_score,
+        LOG(1 + cs.interaction_count + 2 * cs.deployment_count) as popularity_score,
+        1.0 / (1.0 + EXTRACT(DAYS FROM (NOW() - c.updated_at)) / 30.0) as recency_score,
+        (cs.avg_rating / 5.0) * LOG(1.0 + cs.review_count) as rating_score,
+        LOG(1 + cs.user_interaction_count) as personal_boost
+    FROM contracts c
+    JOIN contract_stats cs ON c.id = cs.id
+    CROSS JOIN (SELECT "
+    );
+    qb.push_bind(w_text);
+    qb.push(" as w_text, ");
+    qb.push_bind(w_pop);
+    qb.push(" as w_pop, ");
+    qb.push_bind(w_rec);
+    qb.push(" as w_rec, ");
+    qb.push_bind(w_rat);
+    qb.push(" as w_rat, ");
+    qb.push_bind(w_pers);
+    qb.push(" as w_pers) as weights,
+    LATERAL (SELECT contracts_build_tsquery(");
+    qb.push_bind(params.query.as_deref().unwrap_or(""));
+    qb.push(")) as ts(tsquery)
+    WHERE (c.visibility = 'public'");
 
     if let Some(claims) = &claims {
         qb.push(" OR (c.visibility = 'private' AND c.organization_id IN (");
@@ -1203,6 +1287,11 @@ pub async fn list_contracts(
         qb.push("JOIN publishers p ON p.id = om.publisher_id WHERE p.stellar_address = ");
         qb.push_bind(&claims.sub);
         qb.push("))");
+    }
+    qb.push(")");
+
+    if let Some(ref q) = params.query {
+        qb.push(" AND ts.tsquery @@ c.search_document");
     }
 
     if params.verified_only.unwrap_or(false) {
@@ -1214,44 +1303,109 @@ pub async fn list_contracts(
         qb.push_bind(category);
     }
 
-    if let Some(networks) = params
-        .networks
-        .as_ref()
-        .filter(|n| !n.is_empty())
-        .cloned()
-        .or_else(|| params.network.clone().map(|n| vec![n]))
-    {
+    if let Some(ref nets) = network_list {
         qb.push(" AND c.network IN (");
         let mut separated = qb.separated(", ");
-        for network in networks {
-            separated.push_bind(network);
+        for net in nets {
+            separated.push_bind(net);
         }
         separated.push_unseparated(")");
     }
 
-    if let Some(q) = &params.query {
-        let like = format!("%{}%", q.to_ascii_lowercase());
-        qb.push(" AND (lower(c.name) LIKE ");
-        qb.push_bind(like.clone());
-        qb.push(" OR lower(COALESCE(c.description, '')) LIKE ");
-        qb.push_bind(like);
-        qb.push(")");
+    if let Some(created_to) = params.created_to {
+        qb.push(" AND c.created_at <= ");
+        qb.push_bind(created_to);
     }
 
-    qb.push(" GROUP BY c.id");
-    qb.push(" ORDER BY ");
-    match sort_by {
-        shared::SortBy::UpdatedAt => qb.push("c.updated_at "),
-        shared::SortBy::VerifiedAt => qb.push("c.verified_at "),
-        shared::SortBy::LastAccessedAt => qb.push("c.last_accessed_at "),
-        shared::SortBy::Popularity | shared::SortBy::Interactions => {
-            qb.push("COUNT(ci.id) ")
+    if let Some(updated_from) = params.updated_from {
+        qb.push(" AND c.updated_at >= ");
+        qb.push_bind(updated_from);
+    }
+
+    if let Some(updated_to) = params.updated_to {
+        qb.push(" AND c.updated_at <= ");
+        qb.push_bind(updated_to);
+    }
+
+    if let Some(verified_from) = params.verified_from {
+        qb.push(" AND c.verified_at >= ");
+        qb.push_bind(verified_from);
+    }
+
+    if let Some(verified_to) = params.verified_to {
+        qb.push(" AND c.verified_at <= ");
+        qb.push_bind(verified_to);
+    }
+
+    if let Some(last_accessed_from) = params.last_accessed_from {
+        qb.push(" AND c.last_accessed_at >= ");
+        qb.push_bind(last_accessed_from);
+    }
+
+    if let Some(last_accessed_to) = params.last_accessed_to {
+        qb.push(" AND c.last_accessed_at <= ");
+        qb.push_bind(last_accessed_to);
+    }
+
+    if let Some(ref cursor) = cursor {
+        if let Some(column) = timestamp_sort_column {
+            qb.push(" AND (c.");
+            qb.push(column);
+            qb.push(" ");
+            qb.push(direction_op);
+            qb.push(" ");
+            qb.push_bind(cursor.timestamp);
+            qb.push(" OR (c.");
+            qb.push(column);
+            qb.push(" = ");
+            qb.push_bind(cursor.timestamp);
+            qb.push(" AND c.id ");
+            qb.push(direction_op);
+            qb.push(" ");
+            qb.push_bind(cursor.id);
+            qb.push("))");
         }
-        _ => qb.push("c.created_at "),
-    };
-    qb.push(direction);
-    qb.push(", c.id ");
-    qb.push(direction);
+    }
+
+    qb.push(" )\nSELECT * FROM ranked_contracts ");
+
+    match sort_by {
+        shared::SortBy::CreatedAt
+        | shared::SortBy::UpdatedAt
+        | shared::SortBy::VerifiedAt
+        | shared::SortBy::LastAccessedAt => {
+            qb.push(" ORDER BY ");
+            qb.push(timestamp_sort_column.unwrap_or("created_at"));
+            qb.push(" ");
+            qb.push(direction);
+            qb.push(" NULLS LAST, id ");
+            qb.push(id_direction);
+        }
+        shared::SortBy::Popularity | shared::SortBy::Interactions => {
+            qb.push(" ORDER BY interaction_count ");
+            qb.push(direction);
+            qb.push(", id ");
+            qb.push(id_direction);
+        }
+        shared::SortBy::Deployments => {
+            qb.push(" ORDER BY deployment_count ");
+            qb.push(direction);
+            qb.push(", id ");
+            qb.push(id_direction);
+        }
+        shared::SortBy::Relevance => {
+            qb.push(" ORDER BY relevance_score ");
+            qb.push(direction);
+            qb.push(", id ");
+            qb.push(id_direction);
+        }
+        _ => {
+            qb.push(" ORDER BY created_at ");
+            qb.push(direction);
+            qb.push(", id ");
+            qb.push(id_direction);
+        }
+    }
     qb.push(" LIMIT ");
     qb.push_bind(limit);
     qb.push(" OFFSET ");
@@ -1259,7 +1413,12 @@ pub async fn list_contracts(
 
     let contracts: Vec<Contract> = match qb.build_query_as().fetch_all(&state.db).await {
         Ok(rows) => rows,
-        Err(err) => return db_internal_error("list contracts", err).into_response(),
+=======
+        Err(err) => {
+            tracing::error!(error = ?err, "Search query failed");
+            return db_internal_error("list contracts", err).into_response();
+        },
+>>>>>>> Stashed changes
     };
 
     let mut count_qb: QueryBuilder<'_, sqlx::Postgres> =
@@ -1991,7 +2150,6 @@ pub async fn get_contract(
             ));
         }
     }
-
     let current_network = query.network.clone();
     let network_config = if let Some(ref net) = current_network {
         let configs: Option<std::collections::HashMap<String, NetworkConfig>> = contract
@@ -2847,7 +3005,7 @@ pub async fn get_contract_changelog(
             breaking = has_breaking_changes(&changes);
             breaking_changes = changes
                 .into_iter()
-                .filter(|c| c.severity == crate::breaking_changes::ChangeSeverity::Breaking)
+                .filter(|c| c.severity == breaking_changes::ChangeSeverity::Breaking)
                 .map(|c| c.message)
                 .collect();
         }
@@ -3761,7 +3919,7 @@ pub async fn get_contract_dependencies(
         .map_err(|_| ApiError::bad_request("InvalidContractId", format!("Invalid ID: {}", id)))?;
 
     let deps: Vec<shared::ContractDependency> =
-        sqlx::query_as("SELECT * FROM contract_dependencies WHERE contract_id = $1")
+        sqlx::query_as("SELECT * FROM contract_static_dependencies WHERE contract_id = $1")
             .bind(contract_uuid)
             .fetch_all(&state.db)
             .await
@@ -3790,7 +3948,7 @@ pub async fn get_contract_dependents(
         .map_err(|_| ApiError::bad_request("InvalidContractId", format!("Invalid ID: {}", id)))?;
 
     let dependents: Vec<shared::ContractDependency> =
-        sqlx::query_as("SELECT * FROM contract_dependencies WHERE dependency_contract_id = $1")
+        sqlx::query_as("SELECT * FROM contract_static_dependencies WHERE dependency_contract_id = $1")
             .bind(contract_uuid)
             .fetch_all(&state.db)
             .await
@@ -4817,6 +4975,7 @@ pub async fn get_all_audit_logs(
     Ok(Json(logs))
 }
 
+
 #[utoipa::path(
     get,
     path = "/api/contracts/{id}/deployments",
@@ -4969,6 +5128,25 @@ pub async fn get_contract_deployments(
     }
 
     Ok(Json(response))
+=======
+) -> ApiResult<Json<Vec<ContractDeployment>>> {
+    let contract_uuid = Uuid::parse_str(&id).map_err(|_| {
+        ApiError::bad_request(
+            "InvalidContractId",
+            format!("Invalid contract ID format: {}", id),
+        )
+    })?;
+
+    let deployments: Vec<ContractDeployment> = sqlx::query_as(
+        "SELECT * FROM contract_deployments WHERE contract_id = $1 ORDER BY deployed_at DESC",
+    )
+    .bind(contract_uuid)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| db_internal_error("get contract deployments", err))?;
+
+    Ok(Json(deployments))
+>>>>>>> Stashed changes
 }
 
 #[utoipa::path(
@@ -5384,7 +5562,9 @@ pub async fn route_not_found() -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use crate::breaking_changes;
+    use crate::breaking_changes;
+use chrono::{SecondsFormat, Utc};
     use prometheus::Registry;
     use sqlx::postgres::PgPoolOptions;
     use std::sync::atomic::AtomicBool;
@@ -5808,7 +5988,7 @@ fn apply_condition<'a>(
             builder.push(" = ");
             builder.push_bind(cond.value.as_str().unwrap_or_default());
         }
-        FieldOperator::Ne => {
+        FieldOperator::Ne | FieldOperator::Neq => {
             builder.push(" != ");
             builder.push_bind(cond.value.as_str().unwrap_or_default());
         }
@@ -5816,8 +5996,16 @@ fn apply_condition<'a>(
             builder.push(" > ");
             builder.push_bind(cond.value.as_str().unwrap_or_default());
         }
+        FieldOperator::Gte => {
+            builder.push(" >= ");
+            builder.push_bind(cond.value.as_str().unwrap_or_default());
+        }
         FieldOperator::Lt => {
             builder.push(" < ");
+            builder.push_bind(cond.value.as_str().unwrap_or_default());
+        }
+        FieldOperator::Lte => {
+            builder.push(" <= ");
             builder.push_bind(cond.value.as_str().unwrap_or_default());
         }
         FieldOperator::In => {
@@ -5830,7 +6018,8 @@ fn apply_condition<'a>(
             }
             builder.push(")");
         }
-        FieldOperator::Contains => {
+        }
+        FieldOperator::Like | FieldOperator::Contains => {
             builder.push(" ILIKE ");
             let val = format!("%{}%", cond.value.as_str().unwrap_or_default());
             builder.push_bind(val);
@@ -5839,6 +6028,20 @@ fn apply_condition<'a>(
             builder.push(" ILIKE ");
             let val = format!("{}%", cond.value.as_str().unwrap_or_default());
             builder.push_bind(val);
+        }
+        FieldOperator::In => {
+            builder.push(" IN (");
+            if let Some(arr) = cond.value.as_array() {
+                let mut separated = builder.separated(", ");
+                for val in arr {
+                    let val_str = match val {
+                        serde_json::Value::String(s) => s.as_str(),
+                        _ => "",
+                    };
+                    separated.push_bind(val_str.to_string());
+                }
+            }
+            builder.push(")");
         }
     }
     Ok(())

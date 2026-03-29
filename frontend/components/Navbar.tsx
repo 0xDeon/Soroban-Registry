@@ -9,26 +9,26 @@ import NotificationBell from './NotificationBell';
 
 /* ─── nav links ──────────────────────────────────────────── */
 const NAV_LINKS = [
-    { href: '/contracts',       label: 'Browse',  icon: Package   },
-    { href: '/compare',         label: 'Compare', icon: Columns2  },
-    { href: '/verify-contract', label: 'Verify',  icon: ShieldCheck },
+    { href: '/contracts', label: 'Browse', icon: Package },
+    { href: '/compare', label: 'Compare', icon: Columns2 },
+    { href: '/verify-contract', label: 'Verify', icon: ShieldCheck },
 ] as const;
 
 const EXPLORE_LINKS = [
-    { href: '/publishers', label: 'Publishers', icon: Users     },
-    { href: '/stats',      label: 'Statistics', icon: BarChart2 },
-    { href: '/analytics',  label: 'Analytics',  icon: PieChart  },
-    { href: '/templates',  label: 'Templates',  icon: Layers    },
+    { href: '/publishers', label: 'Publishers', icon: Users },
+    { href: '/stats', label: 'Statistics', icon: BarChart2 },
+    { href: '/analytics', label: 'Analytics', icon: PieChart },
+    { href: '/templates', label: 'Templates', icon: Layers },
 ] as const;
 
 const QUICK_LINKS = [
-    { href: '/contracts',  label: 'Browse Contracts',   icon: Package   },
-    { href: '/compare',    label: 'Compare Contracts',  icon: Columns2  },
-    { href: '/publishers', label: 'Publishers',          icon: Users     },
-    { href: '/stats',      label: 'Statistics',          icon: TrendingUp},
-    { href: '/analytics',  label: 'Analytics',           icon: PieChart  },
-    { href: '/templates',  label: 'Templates',           icon: Layers    },
-    { href: '/graph',      label: 'Dependency Graph',    icon: GitBranch },
+    { href: '/contracts', label: 'Browse Contracts', icon: Package },
+    { href: '/compare', label: 'Compare Contracts', icon: Columns2 },
+    { href: '/publishers', label: 'Publishers', icon: Users },
+    { href: '/stats', label: 'Statistics', icon: TrendingUp },
+    { href: '/analytics', label: 'Analytics', icon: PieChart },
+    { href: '/templates', label: 'Templates', icon: Layers },
+    { href: '/graph', label: 'Dependency Graph', icon: GitBranch },
     { href: '/verify-contract', label: 'Verify Contract', icon: ShieldCheck },
 ] as const;
 
@@ -52,7 +52,7 @@ function useTrapFocus(ref: React.RefObject<HTMLElement | null>, active: boolean)
             'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])'
         );
         const first = focusable[0];
-        const last  = focusable[focusable.length - 1];
+        const last = focusable[focusable.length - 1];
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== 'Tab') return;
             if (e.shiftKey ? document.activeElement === first : document.activeElement === last) {
@@ -90,18 +90,17 @@ function SearchModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
     }, [onClose]);
 
     const suggestions = [
-        { label: 'Token Contract',     href: '/contracts?q=token',   icon: Zap    },
-        { label: 'NFT Marketplace',    href: '/contracts?q=nft',     icon: Layers },
-        { label: 'DeFi Protocols',     href: '/contracts?q=defi',    icon: TrendingUp},
-        { label: 'DAO Governance',     href: '/contracts?q=dao',     icon: Users  },
-        { label: 'Smart Contract SDK', href: '/contracts?q=sdk',     icon: Code2  },
+        { label: 'Token Contract', href: '/contracts?q=token', icon: Zap },
+        { label: 'NFT Marketplace', href: '/contracts?q=nft', icon: Layers },
+        { label: 'DeFi Protocols', href: '/contracts?q=defi', icon: TrendingUp },
+        { label: 'DAO Governance', href: '/contracts?q=dao', icon: Users },
+        { label: 'Smart Contract SDK', href: '/contracts?q=sdk', icon: Code2 },
     ];
 
     return (
         <div
-            className={`fixed inset-0 z-[200] flex items-start justify-center pt-16 sm:pt-24 px-4 transition-all duration-200 ${
-                isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
+            className={`fixed inset-0 z-[200] flex items-start justify-center pt-16 sm:pt-24 px-4 transition-all duration-200 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
             role="dialog"
             aria-modal="true"
             aria-label="Search"
@@ -114,9 +113,8 @@ function SearchModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
 
             {/* Modal panel */}
             <div
-                className={`relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${
-                    isOpen ? 'translate-y-0 scale-100' : '-translate-y-4 scale-95'
-                }`}
+                className={`relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${isOpen ? 'translate-y-0 scale-100' : '-translate-y-4 scale-95'
+                    }`}
             >
                 {/* Search Input */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
@@ -180,14 +178,14 @@ export default function Navbar() {
     const pathname = usePathname() ?? '';
     const scrolled = useScrolled();
 
-    const [mobileOpen,    setMobileOpen]    = useState(false);
-    const [exploreOpen,   setExploreOpen]   = useState(false);
-    const [, setProfileOpen]   = useState(false);
-    const [searchOpen,    setSearchOpen]    = useState(false);
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const [exploreOpen, setExploreOpen] = useState(false);
+    const [, setProfileOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
 
     const exploreTimeout = useRef<NodeJS.Timeout | null>(null);
     const profileTimeout = useRef<NodeJS.Timeout | null>(null);
-    const drawerRef      = useRef<HTMLDivElement>(null);
+    const drawerRef = useRef<HTMLDivElement>(null);
 
     // Close mobile menu on route change
     useEffect(() => { setTimeout(() => setMobileOpen(false), 0); }, [pathname]);
@@ -215,7 +213,7 @@ export default function Navbar() {
     const isExploreActive = EXPLORE_LINKS.some(l => pathname.startsWith(l.href));
 
     /* hover helpers */
-    const onExploreEnter = () => { if (exploreTimeout.current) clearTimeout(exploreTimeout.current); setExploreOpen(true);  };
+    const onExploreEnter = () => { if (exploreTimeout.current) clearTimeout(exploreTimeout.current); setExploreOpen(true); };
     const onExploreLeave = () => { exploreTimeout.current = setTimeout(() => setExploreOpen(false), 150); };
     const onProfileEnter = () => { if (profileTimeout.current) clearTimeout(profileTimeout.current); setProfileOpen(true); };
     const onProfileLeave = () => { profileTimeout.current = setTimeout(() => setProfileOpen(false), 150); };
@@ -224,11 +222,10 @@ export default function Navbar() {
         <>
             {/* ── Main nav bar ───────────────────────────────────────── */}
             <nav
-                className={`sticky top-0 z-50 w-full transition-all duration-300 ${
-                    scrolled
+                className={`sticky top-0 z-50 w-full transition-all duration-300 ${scrolled
                         ? 'bg-background/95 backdrop-blur-2xl border-b border-border shadow-lg shadow-black/8'
                         : 'bg-background/80 backdrop-blur-2xl border-b border-border/50 nav-glow'
-                }`}
+                    }`}
                 aria-label="Main navigation"
             >
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -252,11 +249,10 @@ export default function Navbar() {
                                     key={href}
                                     href={href}
                                     role="menuitem"
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all ${
-                                        isActive(href)
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all ${isActive(href)
                                             ? 'text-primary bg-primary/10'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                    }`}
+                                        }`}
                                     aria-current={isActive(href) ? 'page' : undefined}
                                 >
                                     <Icon className="w-3 h-3" />
@@ -275,11 +271,10 @@ export default function Navbar() {
                                     role="menuitem"
                                     aria-haspopup="true"
                                     aria-expanded={exploreOpen}
-                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all focus:outline-none ${
-                                        isExploreActive || exploreOpen
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all focus:outline-none ${isExploreActive || exploreOpen
                                             ? 'text-primary bg-primary/10'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                    }`}
+                                        }`}
                                 >
                                     Explore
                                     <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${exploreOpen ? 'rotate-180' : ''}`} />
@@ -287,11 +282,10 @@ export default function Navbar() {
 
                                 <div
                                     role="menu"
-                                    className={`absolute top-full left-1/2 -translate-x-1/2 w-48 pt-1.5 transition-all duration-150 ${
-                                        exploreOpen
+                                    className={`absolute top-full left-1/2 -translate-x-1/2 w-48 pt-1.5 transition-all duration-150 ${exploreOpen
                                             ? 'opacity-100 translate-y-0 pointer-events-auto'
                                             : 'opacity-0 -translate-y-2 pointer-events-none'
-                                    }`}
+                                        }`}
                                 >
                                     <div className="rounded-xl border border-border bg-card shadow-xl shadow-black/12 overflow-hidden">
                                         <div className="py-1.5">
@@ -300,11 +294,10 @@ export default function Navbar() {
                                                     key={href}
                                                     href={href}
                                                     role="menuitem"
-                                                    className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
-                                                        isActive(href)
+                                                    className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${isActive(href)
                                                             ? 'text-primary bg-primary/8'
                                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                                    }`}
+                                                        }`}
                                                     aria-current={isActive(href) ? 'page' : undefined}
                                                 >
                                                     <Icon className="w-3.5 h-3.5 text-primary/70" />
@@ -319,11 +312,10 @@ export default function Navbar() {
                             <Link
                                 href="/graph"
                                 role="menuitem"
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all ${
-                                    isActive('/graph')
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all ${isActive('/graph')
                                         ? 'text-primary bg-primary/10'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                }`}
+                                    }`}
                                 aria-current={isActive('/graph') ? 'page' : undefined}
                             >
                                 <GitBranch className="w-3 h-3" />
@@ -357,58 +349,43 @@ export default function Navbar() {
                                     <div className="py-1">
                                         <Link
                                             href="/publishers"
-                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
-                                                isActive('/publishers')
+                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${isActive('/publishers')
                                                     ? 'text-primary bg-primary/5'
                                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                            }`}
+                                                }`}
                                         >
                                             <Users className="w-3.5 h-3.5 text-primary/70" />
                                             Publishers
                                         </Link>
                                         <Link
                                             href="/stats"
-                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
-                                                isActive('/stats')
+                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${isActive('/stats')
                                                     ? 'text-primary bg-primary/5'
                                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                            }`}
+                                                }`}
                                         >
                                             <BarChart2 className="w-3.5 h-3.5 text-primary/70" />
                                             Statistics
                                         </Link>
                                         <Link
                                             href="/analytics"
-                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
-                                                isActive('/analytics')
+                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${isActive('/analytics')
                                                     ? 'text-primary bg-primary/5'
                                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                            }`}
+                                                }`}
                                         >
                                             <PieChart className="w-3.5 h-3.5 text-primary/70" />
                                             Analytics
                                         </Link>
                                         <Link
                                             href="/templates"
-                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
-                                                isActive('/templates')
+                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${isActive('/templates')
                                                     ? 'text-primary bg-primary/5'
                                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                            }`}
+                                                }`}
                                         >
                                             <Layers className="w-3.5 h-3.5 text-primary/70" />
                                             Templates
-                                        </Link>
-                                        <Link
-                                            href="/analytics"
-                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
-                                                isActive('/analytics')
-                                                    ? 'text-primary bg-primary/5'
-                                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                            }`}
-                                        >
-                                            <TrendingUp className="w-3.5 h-3.5 text-primary/70" />
-                                            Analytics
                                         </Link>
                                     </div>
                                 </div>
@@ -446,14 +423,12 @@ export default function Navbar() {
                             >
                                 <span className="relative w-5 h-5 flex items-center justify-center">
                                     <Menu
-                                        className={`w-5 h-5 absolute transition-all duration-200 ${
-                                            mobileOpen ? 'opacity-0 rotate-90 scale-75' : 'opacity-100 rotate-0 scale-100'
-                                        }`}
+                                        className={`w-5 h-5 absolute transition-all duration-200 ${mobileOpen ? 'opacity-0 rotate-90 scale-75' : 'opacity-100 rotate-0 scale-100'
+                                            }`}
                                     />
                                     <X
-                                        className={`w-5 h-5 absolute transition-all duration-200 ${
-                                            mobileOpen ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-75'
-                                        }`}
+                                        className={`w-5 h-5 absolute transition-all duration-200 ${mobileOpen ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-75'
+                                            }`}
                                     />
                                 </span>
                             </button>
@@ -465,9 +440,8 @@ export default function Navbar() {
             {/* ── Mobile drawer overlay + panel ──────────────────────── */}
             <div
                 id="mobile-nav-drawer"
-                className={`fixed inset-0 z-[100] md:hidden transition-all duration-300 ${
-                    mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                }`}
+                className={`fixed inset-0 z-[100] md:hidden transition-all duration-300 ${mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                    }`}
                 aria-hidden={!mobileOpen}
             >
                 {/* Backdrop */}
@@ -483,9 +457,8 @@ export default function Navbar() {
                     role="dialog"
                     aria-modal="true"
                     aria-label="Mobile navigation menu"
-                    className={`absolute inset-y-0 right-0 w-[80vw] max-w-sm flex flex-col bg-card border-l border-border shadow-2xl transition-transform duration-300 ease-in-out ${
-                        mobileOpen ? 'translate-x-0' : 'translate-x-full'
-                    }`}
+                    className={`absolute inset-y-0 right-0 w-[80vw] max-w-sm flex flex-col bg-card border-l border-border shadow-2xl transition-transform duration-300 ease-in-out ${mobileOpen ? 'translate-x-0' : 'translate-x-full'
+                        }`}
                 >
                     {/* Drawer header */}
                     <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -518,18 +491,16 @@ export default function Navbar() {
                                 { href: '/stats', label: 'Statistics', icon: BarChart2 },
                                 { href: '/analytics', label: 'Analytics', icon: PieChart },
                                 { href: '/templates', label: 'Templates', icon: Layers },
-                                { href: '/analytics', label: 'Search Analytics', icon: TrendingUp },
                                 { href: '/graph', label: 'Dependency Graph', icon: GitBranch },
                             ].map(({ href, label, icon: Icon }) => (
                                 <Link
                                     key={href}
                                     href={href}
                                     onClick={() => setMobileOpen(false)}
-                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                                        isActive(href)
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive(href)
                                             ? 'text-primary bg-primary/12 border border-primary/20'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent'
-                                    }`}
+                                        }`}
                                 >
                                     <Icon className="w-4 h-4" />
                                     {label}
@@ -550,16 +521,14 @@ export default function Navbar() {
                                     key={href}
                                     href={href}
                                     onClick={() => setMobileOpen(false)}
-                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                                        isActive(href)
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive(href)
                                             ? 'text-primary bg-primary/10'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                                    }`}
+                                        }`}
                                     aria-current={isActive(href) ? 'page' : undefined}
                                 >
-                                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
-                                        isActive(href) ? 'bg-primary/20' : 'bg-accent'
-                                    }`}>
+                                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${isActive(href) ? 'bg-primary/20' : 'bg-accent'
+                                        }`}>
                                         <Icon className={`w-3.5 h-3.5 ${isActive(href) ? 'text-primary' : 'text-muted-foreground'}`} />
                                     </span>
                                     {label}

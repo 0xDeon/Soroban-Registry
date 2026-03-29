@@ -1,3 +1,4 @@
+use chrono::Utc;
 use crate::{
     auth::AuthClaims,
     error::{ApiError, ApiResult},
@@ -8,12 +9,12 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use chrono::Utc;
 use shared::{
     CreateOrganizationRequest, InviteMemberRequest, Organization, OrganizationMember,
     OrganizationRole, UpdateOrganizationRequest,
 };
 use sqlx::PgPool;
+use sqlx::{Row, postgres::PgRow};
 use uuid::Uuid;
 
 fn db_internal_error(operation: &str, err: sqlx::Error) -> ApiError {
@@ -32,28 +33,31 @@ pub async fn create_organization(
         .await
         .map_err(|e| db_internal_error("begin_transaction", e))?;
 
-    let publisher_id: Uuid = sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
+    // 1. Get publisher ID from Stellar address (claims.sub)
+    let publisher_id: Uuid = sqlx::query_scalar::<_, Uuid>("SELECT id FROM publishers WHERE stellar_address = $1")
         .bind(&claims.sub)
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| db_internal_error("get_publisher_id", e))?
         .ok_or_else(|| ApiError::unauthorized("Publisher not found for authenticated user"))?;
 
-    let org: Organization = sqlx::query_as(
+    // 2. Create organization
+    let org: Organization = sqlx::query_as::<_, Organization>(
         r#"
         INSERT INTO organizations (name, slug, description, is_private)
         VALUES ($1, $2, $3, $4)
         RETURNING *
         "#,
     )
-    .bind(payload.name)
-    .bind(payload.slug)
-    .bind(payload.description)
+    .bind(&payload.name)
+    .bind(&payload.slug)
+    .bind(&payload.description)
     .bind(payload.is_private.unwrap_or(true))
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| db_internal_error("create_organization", e))?;
 
+    // 3. Add creator as Admin
     sqlx::query(
         r#"
         INSERT INTO organization_members (organization_id, publisher_id, role)
@@ -69,7 +73,7 @@ pub async fn create_organization(
 
     tx.commit()
         .await
-        .map_err(|e| db_internal_error("commit_transaction", e))?;
+        .map_err::<crate::error::ApiError, _>(|e| db_internal_error("commit_transaction", e))?;
 
     Ok((StatusCode::CREATED, Json(org)))
 }
@@ -132,8 +136,8 @@ pub async fn update_organization(
         RETURNING *
         "#,
     )
-    .bind(payload.name)
-    .bind(payload.description)
+    .bind(&payload.name)
+    .bind(&payload.description)
     .bind(payload.is_private)
     .bind(id)
     .fetch_one(&state.db)
@@ -149,7 +153,7 @@ pub async fn check_org_role(
     user_address: &str,
     min_role: OrganizationRole,
 ) -> ApiResult<OrganizationRole> {
-    let role = sqlx::query_scalar::<_, OrganizationRole>(
+    let role: OrganizationRole = sqlx::query_scalar::<_, OrganizationRole>(
         r#"
         SELECT om.role
         FROM organization_members om
@@ -212,11 +216,14 @@ pub async fn invite_member(
 ) -> ApiResult<StatusCode> {
     check_org_role(&state.db, id, &claims.sub, OrganizationRole::Admin).await?;
 
-    let inviter_id: Uuid = sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
-        .bind(&claims.sub)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| db_internal_error("get_inviter_id", e))?;
+    // Get inviter publisher ID
+    let inviter_id: Uuid = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM publishers WHERE stellar_address = $1"
+    )
+    .bind(&claims.sub)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| db_internal_error("get_inviter_id", e))?;
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + chrono::Duration::days(7);
@@ -228,14 +235,14 @@ pub async fn invite_member(
         "#,
     )
     .bind(id)
-    .bind(payload.email)
+    .bind(&payload.email)
     .bind(payload.role)
-    .bind(token)
+    .bind(&token)
     .bind(inviter_id)
     .bind(expires_at)
     .execute(&state.db)
     .await
-    .map_err(|e| db_internal_error("create_invitation", e))?;
+    .map_err::<crate::error::ApiError, _>(|e| db_internal_error("create_invitation", e))?;
 
     Ok(StatusCode::ACCEPTED)
 }
@@ -258,25 +265,30 @@ pub async fn accept_invitation(
         .await
         .map_err(|e| db_internal_error("begin_transaction", e))?;
 
-    let invite: InviteRow = sqlx::query_as(
+    // 1. Validate invitation
+    let invite: PgRow = sqlx::query(
         r#"
         SELECT id, organization_id, role
         FROM organization_invitations
         WHERE token = $1 AND accepted_at IS NULL AND expires_at > NOW()
-        "#,
+        "#
     )
-    .bind(token)
-    .fetch_optional(&mut *tx)
+    .bind(&token)
+    .fetch_optional::<&mut sqlx::Transaction<'_, sqlx::Postgres>>(&mut *tx)
     .await
     .map_err(|e| db_internal_error("get_invitation", e))?
     .ok_or_else(|| ApiError::not_found("InvitationNotFound", "Invitation is invalid or expired"))?;
 
-    let publisher_id: Uuid = sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
-        .bind(&claims.sub)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| db_internal_error("get_publisher_id", e))?;
+    // 2. Get publisher ID for accepting user
+    let publisher_id: Uuid = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM publishers WHERE stellar_address = $1"
+    )
+    .bind(&claims.sub)
+    .fetch_one::<&mut sqlx::Transaction<'_, sqlx::Postgres>>(&mut *tx)
+    .await
+    .map_err(|e| db_internal_error("get_publisher_id", e))?;
 
+    // 3. Add member
     sqlx::query(
         r#"
         INSERT INTO organization_members (organization_id, publisher_id, role)
@@ -284,22 +296,25 @@ pub async fn accept_invitation(
         ON CONFLICT (organization_id, publisher_id) DO UPDATE SET role = EXCLUDED.role
         "#,
     )
-    .bind(invite.organization_id)
+    .bind(invite.get::<Uuid, _>("organization_id"))
     .bind(publisher_id)
-    .bind(invite.role)
-    .execute(&mut *tx)
+    .bind(invite.get::<OrganizationRole, _>("role"))
+    .execute::<&mut sqlx::Transaction<'_, sqlx::Postgres>>(&mut *tx)
     .await
     .map_err(|e| db_internal_error("add_member", e))?;
 
-    sqlx::query("UPDATE organization_invitations SET accepted_at = NOW() WHERE id = $1")
-        .bind(invite.id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| db_internal_error("mark_invite_accepted", e))?;
+    // 4. Mark invitation as accepted
+    sqlx::query(
+        "UPDATE organization_invitations SET accepted_at = NOW() WHERE id = $1"
+    )
+    .bind(invite.get::<Uuid, _>("id"))
+    .execute::<&mut sqlx::Transaction<'_, sqlx::Postgres>>(&mut *tx)
+    .await
+    .map_err(|e| db_internal_error("mark_invite_accepted", e))?;
 
     tx.commit()
         .await
-        .map_err(|e| db_internal_error("commit_transaction", e))?;
+        .map_err::<crate::error::ApiError, _>(|e| db_internal_error("commit_transaction", e))?;
 
     Ok(StatusCode::OK)
 }

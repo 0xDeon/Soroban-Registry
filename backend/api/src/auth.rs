@@ -1,4 +1,9 @@
-use axum::{extract::Request, http::header, http::StatusCode, middleware::Next, response::Response};
+use axum::{
+    extract::{FromRequestParts, Request},
+    http::{header, request::Parts, StatusCode},
+    middleware::Next,
+    response::Response,
+};
 use chrono::{Duration, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -7,7 +12,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::error::ApiError;
+use crate::{
+    error::ApiError,
+    state::AppState,
+};
+use uuid::Uuid;
 
 pub const MIN_JWT_SECRET_LEN: usize = 32;
 
@@ -20,6 +29,12 @@ pub struct AuthClaims {
     pub role: Option<String>,
     #[serde(default)]
     pub admin: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthenticatedUser {
+    pub id: Uuid,
+    pub claims: AuthClaims,
 }
 
 #[derive(Debug, Clone)]
@@ -145,28 +160,62 @@ impl AuthManager {
 }
 
 #[axum::async_trait]
-impl<S> axum::extract::FromRequestParts<S> for AuthClaims
-where
-    S: Send + Sync,
-{
-    type Rejection = StatusCode;
+impl FromRequestParts<AppState> for AuthenticatedUser {
+    type Rejection = ApiError;
 
-    async fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let auth_header = parts
-            .headers
-            .get(header::AUTHORIZATION)
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        let auth_header = parts.headers.get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .ok_or(StatusCode::UNAUTHORIZED)?;
+            .ok_or_else(|| ApiError::unauthorized("Missing authorization header"))?;
 
-        let auth_manager =
-            AuthManager::from_env().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        auth_manager
-            .validate_jwt(auth_header)
-            .map_err(|_| StatusCode::UNAUTHORIZED)
+        if !auth_header.starts_with("Bearer ") {
+            return Err(ApiError::unauthorized("Invalid authorization header format"));
+        }
+
+        let token = &auth_header[7..];
+        let auth_manager = AuthManager::from_env()
+            .map_err(|_| ApiError::internal("Authentication configuration error"))?;
+
+        let claims = auth_manager.validate_jwt(token)
+            .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+
+        // Resolve stellar address (sub) to publisher UUID
+        let user_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM publishers WHERE stellar_address = $1"
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::unauthorized("User not found in registry"))?;
+
+        Ok(AuthenticatedUser {
+            id: user_id,
+            claims,
+        })
+    }
+}
+
+#[axum::async_trait]
+impl FromRequestParts<AppState> for AuthClaims {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &AppState) -> Result<Self, Self::Rejection> {
+        let auth_header = parts.headers.get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| ApiError::unauthorized("Missing authorization header"))?;
+
+        if !auth_header.starts_with("Bearer ") {
+            return Err(ApiError::unauthorized("Invalid authorization header format"));
+        }
+
+        let token = &auth_header[7..];
+        let auth_manager = AuthManager::from_env()
+            .map_err(|_| ApiError::internal("Authentication configuration error"))?;
+
+        let claims = auth_manager.validate_jwt(token)
+            .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+
+        Ok(claims)
     }
 }
 

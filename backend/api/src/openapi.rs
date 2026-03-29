@@ -1,3 +1,4 @@
+use crate::analytics_handlers;
 use crate::breaking_changes;
 use crate::custom_metrics_handlers;
 use crate::deprecation_handlers;
@@ -31,7 +32,8 @@ use utoipa::OpenApi;
         handlers::get_contract_abi,
         handlers::get_contract_openapi_yaml,
         handlers::get_contract_openapi_json,
-        crate::analytics_handlers::get_contract_analytics,
+        analytics_handlers::get_contract_analytics,
+        analytics_handlers::get_analytics_summary,
         handlers::get_contract_dependencies,
         handlers::get_contract_dependents,
         handlers::get_contract_graph,
@@ -160,6 +162,15 @@ use utoipa::OpenApi;
             ModerateReviewRequest,
             ContractRatingStats,
             RatingDistribution,
+            // Collaborative Review system
+            CollaborativeReview,
+            CollaborativeReviewer,
+            CollaborativeComment,
+            CreateCollaborativeReviewRequest,
+            AddCollaborativeCommentRequest,
+            UpdateReviewerStatusRequest,
+            CollaborativeReviewDetails,
+            CollaborativeReviewStatus,
         )
     ),
     tags(

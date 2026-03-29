@@ -6,8 +6,8 @@ authors.workspace = true
 license.workspace = true
 
 [features]
-default = ["openapi"]
-openapi = []
+default = []
+openapi = ["utoipa-swagger-ui"]
 
 [[bin]]
 name = "api"
@@ -60,7 +60,7 @@ contract_abi = { path = "../contract_abi" }
 rust_decimal = { workspace = true }
 redis = { version = "0.25", features = ["tokio-rustls-comp", "json", "connection-manager", "tokio-comp"] }
 utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }
+utoipa-swagger-ui = { workspace = true, optional = true }
 futures-util = "0.3"
 stellar-strkey = "0.0.16"
 stellar-xdr = { version = "26.0.0", features = ["curr", "std", "base64"] }

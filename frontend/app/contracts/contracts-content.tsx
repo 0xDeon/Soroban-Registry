@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { api, ContractSearchParams, Contract } from '@/lib/api';
 import ContractCard from '@/components/ContractCard';
 import ContractCardSkeleton from '@/components/ContractCardSkeleton';
@@ -16,6 +16,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import QueryBuilder from '@/components/contracts/QueryBuilder';
 import FavoriteSearches from '@/components/contracts/FavoriteSearches';
+import { useSearchUrlSync } from '@/hooks/useSearchUrlSync';
+import { QueryNode } from '@/lib/api';
 
 const DEFAULT_PAGE_SIZE = 12;
 const CATEGORY_OPTIONS = [
@@ -176,45 +178,38 @@ export function ContractsContent() {
     getInitialFilters(new URLSearchParams(searchParams?.toString() ?? '')),
   );
 
+  const [isAdvancedSearch, setIsAdvancedSearch] = useState(false);
+  const [advancedQuery, setAdvancedQuery] = useState<QueryNode | null>(null);
+
   const { query, categories, languages, tags, networks, author, verified_only, sort_by, sort_order, page, page_size } = filters;
 
-  useEffect(() => {
-    // Skip URL sync if no filters are active
-    const isEmptyFilters = !query && categories.length === 0 && languages.length === 0 && 
-                           tags.length === 0 && networks.length === 0 && !author && !verified_only;
-    if (isEmptyFilters) return;
+  const apiParams = useMemo((): ContractSearchParams => {
+    if (isAdvancedSearch && advancedQuery) {
+      return {
+        query: JSON.stringify(advancedQuery),
+        page,
+        page_size,
+        sort_by,
+        sort_order,
+      };
+    }
+    return {
+      query,
+      categories,
+      languages,
+      networks,
+      author: author || undefined,
+      verified_only,
+      sort_by,
+      sort_order,
+      page,
+      page_size,
+    };
+  }, [isAdvancedSearch, advancedQuery, query, categories, languages, networks, author, verified_only, sort_by, sort_order, page, page_size]);
 
-    const params = new URLSearchParams();
-    if (query) params.set('query', query);
-    categories.forEach((category) => params.append('category', category));
-    languages.forEach((language) => params.append('language', language));
-    tags.forEach((tag) => params.append('tag', tag));
-    networks.forEach((network) => params.append('network', network));
-    if (author) params.set('author', author);
-    if (verified_only) params.set('verified_only', 'true');
-    if (sort_by) params.set('sort_by', sort_by);
-    if (sort_order) params.set('sort_order', sort_order);
-    if (page > 1) params.set('page', String(page));
-    params.set('page_size', String(page_size));
+  const { syncToUrl } = useSearchUrlSync(advancedQuery, setAdvancedQuery);
 
-    const next = params.toString();
-    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
-  }, [query, categories, languages, tags, networks, author, verified_only, sort_by, sort_order, page, page_size, pathname, router]);
-
-  // Build API parameters from filters  
-  const apiParams = {
-    keyword: query,
-    categories: categories.length > 0 ? categories : undefined,
-    languages: languages.length > 0 ? languages : undefined,
-    networks: networks.length > 0 ? (networks as Array<'mainnet'|'testnet'|'futurenet'>) : undefined,
-    author: author || undefined,
-    verified_only: verified_only || undefined,
-    sort_by: sort_by as any,
-    page,
-    page_size,
-  };
-
-  const { data: allContracts, isLoading, isFetching } = useQuery<Awaited<ReturnType<typeof api.getContracts>>>({
+  const { data: allContracts, isLoading, isFetching, refetch } = useQuery<Awaited<ReturnType<typeof api.getContracts>>>({
     queryKey: ['contracts', apiParams],
     queryFn: () => api.getContracts(apiParams),
     placeholderData: (previousData) => previousData ?? EMPTY_CONTRACTS_RESPONSE,
@@ -232,7 +227,7 @@ export function ContractsContent() {
         (c) =>
           c.name.toLowerCase().includes(q) ||
           (c.description && c.description.toLowerCase().includes(q)) ||
-          c.tags.some((t) => t.toLowerCase().includes(q)),
+          (c.tags && Array.isArray(c.tags) && c.tags.some((t) => t.toLowerCase().includes(q))),
       );
     }
 
@@ -247,13 +242,13 @@ export function ContractsContent() {
     if (filters.languages.length > 0) {
       const langs = filters.languages.map((l) => l.toLowerCase());
       filtered = filtered.filter((c) =>
-        c.tags.some((t) => langs.includes(t.toLowerCase())),
+        c.tags && Array.isArray(c.tags) && c.tags.some((t) => langs.includes(t.toLowerCase())),
       );
     }
 
     if (filters.tags.length > 0) {
       filtered = filtered.filter((c) =>
-        filters.tags.every((tag) => c.tags.includes(tag)),
+        filters.tags.every((tag) => c.tags && Array.isArray(c.tags) && c.tags.includes(tag)),
       );
     }
 
@@ -292,16 +287,23 @@ export function ContractsContent() {
     return { items, total, page: filters.page, page_size: filters.page_size, total_pages };
   }, [allContracts, filters]);
 
+  const { mutate: saveFavorite } = useMutation({
+    mutationFn: (name: string) => api.saveFavoriteSearch({ name, query: advancedQuery! }),
+    onSuccess: () => {
+      alert('Search saved to favorites');
+    },
+  });
+
+  const saveFavoriteMutation = { mutate: saveFavorite };
+
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: () => api.getStats(),
   });
 
-  // Used to determine if results are empty for UI
   const paginationRange = useMemo(
     () => (effectiveData ? getPaginationRange(filters.page, effectiveData.total_pages) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filters.page],
+    [filters.page, effectiveData],
   );
 
   useEffect(() => {
@@ -462,7 +464,7 @@ export function ContractsContent() {
           page: 1,
         }))
       }
-      networks={Array.from(ALL_NETWORK_FILTERS)}
+      networks={Array.from(ALL_NETWORK_FILTERS) as any}
       selectedNetworks={filters.networks}
       onToggleNetwork={(value) =>
         setFilters((current) => ({
@@ -504,44 +506,38 @@ export function ContractsContent() {
 
             {/* Inline search */}
             <div className="max-w-2xl mx-auto mb-10">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    value={filters.query}
-                    onChange={(e) => setFilters((current) => ({ ...current, query: e.target.value, page: 1 }))}
-                    placeholder="Search contracts by name, category, or tag..."
-                    aria-label="Search contracts"
-                    aria-keyshortcuts="/"
-                    className="w-full pl-12 pr-24 py-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary shadow-lg"
-                  />
-                  {filters.query && (
+                {!isAdvancedSearch ? (
+                  <div className="relative">
+                    <SearchBar 
+                      value={filters.query}
+                      onChange={(val) => setFilters((prev) => ({ ...prev, query: val, page: 1 }))}
+                      onClear={() => setFilters((prev) => ({ ...prev, query: '', page: 1 }))}
+                      placeholder="Search contracts by name, category, or tag..."
+                    />
                     <button
                       type="button"
-                      onClick={() => {
-                        logEvent('search_performed', {
-                          keyword: '',
-                          action: 'clear_query',
-                        });
-                        setFilters((current) => ({ ...current, query: '', page: 1 }));
-                      }}
-                      className="absolute right-20 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label="Clear search"
+                      onClick={() => setMobileFiltersOpen(true)}
+                      className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-medium text-sm"
                     >
-                      <X className="w-4 h-4" />
+                      Filters
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setMobileFiltersOpen(true)}
-                    className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-medium text-sm"
-                  >
-                    Filters
-                  </button>
-                  <div className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 items-center gap-2">
-                    <kbd className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-mono border border-border">/</kbd>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-6 text-left">
+                    <QueryBuilder 
+                      initialQuery={advancedQuery || undefined}
+                      onChange={(q) => setAdvancedQuery(q)}
+                      onSearch={() => {
+                        if (advancedQuery) syncToUrl(advancedQuery);
+                        refetch();
+                      }}
+                      onSave={() => {
+                        const name = prompt('Enter a name for this favorite search:');
+                        if (name) saveFavoriteMutation.mutate(name);
+                      }}
+                    />
+                  </div>
+                )}
             </div>
 
             {/* Stats row */}
@@ -577,10 +573,7 @@ export function ContractsContent() {
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
-            <ResultsCount
-              visibleCount={effectiveData?.items.length ?? 0}
-              totalCount={effectiveData?.total ?? 0}
-            />
+            <ResultsCount visibleCount={effectiveData?.items.length ?? 0} totalCount={effectiveData?.total ?? 0} />
             {isFetching && !isLoading && (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                 <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -669,7 +662,6 @@ export function ContractsContent() {
                 {effectiveData.total_pages > 1 && (
                   <div className="flex flex-wrap items-center justify-center gap-2 py-4">
                     <button
-                      type="button"
                       onClick={() =>
                         setFilters((current) => ({ ...current, page: Math.max(1, current.page - 1) }))
                       }
@@ -717,7 +709,6 @@ export function ContractsContent() {
                     })}
 
                     <button
-                      type="button"
                       onClick={() =>
                         setFilters((current) => ({ ...current, page: current.page + 1 }))
                       }

@@ -217,6 +217,43 @@ export interface ContractRecommendationsResponse {
   recommendations: RecommendedContract[];
 }
 
+export interface CollaborativeReview {
+  id: string;
+  contract_id: string;
+  version: string;
+  status: 'pending' | 'approved' | 'changes_requested';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CollaborativeReviewer {
+  id: string;
+  review_id: string;
+  user_id: string;
+  status: 'pending' | 'approved' | 'changes_requested';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CollaborativeComment {
+  id: string;
+  review_id: string;
+  user_id: string;
+  content: string;
+  line_number?: number;
+  file_path?: string;
+  abi_path?: string;
+  parent_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CollaborativeReviewDetails {
+  review: CollaborativeReview;
+  reviewers: CollaborativeReviewer[];
+  comments: CollaborativeComment[];
+}
+
 export interface Publisher {
   id: string;
   stellar_address: string;
@@ -409,12 +446,12 @@ async function handleApiCall<T>(
 ): Promise<T> {
   try {
     const response = await apiCall();
-    
+
     if (!response.ok) {
       const errorData = await extractErrorData(response);
       throw createApiError(response.status, errorData, endpoint);
     }
-    
+
     try {
       return await response.json();
     } catch (parseError) {
@@ -430,7 +467,7 @@ async function handleApiCall<T>(
     if (error instanceof ApiError) {
       throw error;
     }
-    
+
     // Handle network errors
     if (error instanceof TypeError) {
       const message = error.message.toLowerCase();
@@ -441,12 +478,12 @@ async function handleApiCall<T>(
         );
       }
     }
-    
+
     // Handle timeout errors
     if (error instanceof Error && error.name === 'AbortError') {
       throw new NetworkError('The request timed out. Please try again.', endpoint);
     }
-    
+
     // Unknown error
     throw new ApiError('An unexpected error occurred', undefined, error, endpoint);
   }
@@ -933,6 +970,54 @@ export const api = {
     return handleApiCall<FormalVerificationReport[]>(
       () => fetch(`${API_URL}/api/contracts/${id}/formal-verification`),
       `/api/contracts/${id}/formal-verification`
+    );
+  },
+
+  async getFormalVerificationReport(id: string): Promise<FormalVerificationReport> {
+    return handleApiCall<FormalVerificationReport>(
+      () => fetch(`${API_URL}/api/contracts/${id}/formal-verification/report`),
+      `/api/contracts/${id}/formal-verification/report`
+    );
+  },
+
+  // Collaborative Review endpoints
+  async createCollaborativeReview(data: { contract_id: string; version: string; reviewer_ids: string[] }): Promise<CollaborativeReview> {
+    return handleApiCall<CollaborativeReview>(
+      () => fetch(`${API_URL}/api/reviews/collaborative`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+      "/api/reviews/collaborative"
+    );
+  },
+
+  async addCollaborativeComment(review_id: string, data: { content: string; line_number?: number; file_path?: string; abi_path?: string; parent_id?: string }): Promise<CollaborativeComment> {
+    return handleApiCall<CollaborativeComment>(
+      () => fetch(`${API_URL}/api/reviews/collaborative/${review_id}/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+      `/api/reviews/collaborative/${review_id}/comment`
+    );
+  },
+
+  async updateReviewerStatus(review_id: string, status: string): Promise<void> {
+    await handleApiCall<void>(
+      () => fetch(`${API_URL}/api/reviews/collaborative/${review_id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      }),
+      `/api/reviews/collaborative/${review_id}/status`
+    );
+  },
+
+  async getCollaborativeReview(review_id: string): Promise<CollaborativeReviewDetails> {
+    return handleApiCall<CollaborativeReviewDetails>(
+      () => fetch(`${API_URL}/api/reviews/collaborative/${review_id}`),
+      `/api/reviews/collaborative/${review_id}`
     );
   },
 
@@ -1709,8 +1794,8 @@ export interface QueryCondition {
   value: string | number | boolean | string[];
 }
 
-export type QueryNode = 
-  | QueryCondition 
+export type QueryNode =
+  | QueryCondition
   | { operator: QueryOperator; conditions: QueryNode[] };
 
 export interface AdvancedSearchRequest {
