@@ -42,6 +42,7 @@ import ReleaseNotesPanel from "@/components/ReleaseNotesPanel";
 import ContractComments from "@/components/ContractComments";
 import { useContractAutoRefresh } from "@/hooks/useContractAutoRefresh";
 import ContractInteractionFlow from "@/components/contracts/ContractInteractionFlow";
+import ContractAbiMethodExplorer from "@/components/contracts/ContractAbiMethodExplorer";
 
 
 const NETWORKS: Network[] = ["mainnet", "testnet", "futurenet"];
@@ -572,22 +573,39 @@ function ContractDetailsContent() {
         )}
 
         {activeTab === "abi" && (
+          <section className="bg-card rounded-2xl border border-border p-6 space-y-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-foreground">ABI Method Explorer</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Browse contract methods, input parameters, simulate calls, and copy SDK snippets.
+                </p>
+              </div>
+              {abiResponse?.abi != null && (
+                <details className="flex-shrink-0">
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none">
+                    View raw JSON
+                  </summary>
+                  <div className="absolute right-6 z-20 mt-2 w-[min(600px,90vw)] max-h-96 overflow-auto rounded-xl border border-border bg-zinc-950 p-4 shadow-2xl">
+                    <pre className="text-[11px] leading-5 text-zinc-300 font-mono">
+                      {JSON.stringify(abiResponse.abi, null, 2)}
+                    </pre>
+                  </div>
+                </details>
+              )}
+            </div>
 
-          <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
-            <h2 className="text-xl font-semibold text-foreground">ABI</h2>
             {abiLoading ? (
-              <div className="h-64 animate-pulse bg-muted rounded" />
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-14 animate-pulse bg-muted rounded-xl" />
+                ))}
+              </div>
             ) : (
-              <pre className="overflow-x-auto rounded-xl border border-border bg-background p-4 text-xs leading-6">
-                {JSON.stringify(abiResponse?.abi ?? {}, null, 2)
-                  .split("\n")
-                  .filter((line) => !loweredSearch || line.toLowerCase().includes(loweredSearch))
-                  .map((line, idx) => (
-                    <div key={`${idx}-${line.slice(0, 12)}`}>
-                      {line || " "}
-                    </div>
-                  ))}
-              </pre>
+              <ContractAbiMethodExplorer
+                abi={abiResponse?.abi}
+                contractId={displayContractId}
+              />
             )}
           </section>
         )}
