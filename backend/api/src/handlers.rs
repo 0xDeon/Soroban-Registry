@@ -17,15 +17,18 @@ use serde_json::{json, Value};
 use shared::{
     pagination::Cursor, AdvancedSearchRequest, AnalyticsEventType, AuditActionType,
     ChangePublisherRequest, Contract, ContractAuditLog, ContractChangelogEntry,
-    ContractChangelogResponse, ContractDeployment, ContractGetResponse,
-    ContractInteractionResponse, ContractSearchParams, ContractSource, ContractVersion,
-    CreateContractVersionRequest, CreateInteractionBatchRequest, CreateInteractionRequest,
-    FavoriteSearch, FieldOperator, GraphResponse, InteractionTimeSeriesPoint,
-    InteractionTimeSeriesResponse, InteractionsListResponse, InteractionsQueryParams, Network,
-    NetworkConfig, NetworkEndpoints, NetworkInfo, NetworkListResponse, NetworkStatus,
-    PaginatedResponse, PublishRequest, Publisher, QueryCondition, QueryNode, QueryOperator,
-    SaveFavoriteSearchRequest, SearchSuggestion, SearchSuggestionsResponse, SemVer, TrendingParams,
-    UpdateContractMetadataRequest, UpdateContractStatusRequest, VerifyRequest,
+    ContractChangelogResponse, ContractDeploymentHistory, ContractExportAcceptedResponse,
+    ContractExportFormat, ContractExportJobStatus, ContractExportMetadata, ContractExportRequest,
+    ContractExportStatusResponse, ContractGetResponse, ContractInteractionResponse,
+    ContractMetadataExportEnvelope, ContractMetadataExportRecord, ContractSearchParams,
+    ContractSource, ContractVersion, CreateContractVersionRequest, CreateInteractionBatchRequest,
+    CreateInteractionRequest, DeploymentHistoryQueryParams, FavoriteSearch, FieldOperator,
+    GraphResponse, InteractionTimeSeriesPoint, InteractionTimeSeriesResponse,
+    InteractionsListResponse, InteractionsQueryParams, Network, NetworkConfig, NetworkEndpoints,
+    NetworkInfo, NetworkListResponse, NetworkStatus, PaginatedResponse, PublishRequest, Publisher,
+    QueryCondition, QueryNode, QueryOperator, SaveFavoriteSearchRequest, SearchSuggestion,
+    SearchSuggestionsResponse, SemVer, TrendingParams, UpdateContractMetadataRequest,
+    UpdateContractStatusRequest, VerifyRequest,
 };
 use sqlx::{Postgres, QueryBuilder};
 use std::collections::{HashMap, HashSet};
@@ -1515,7 +1518,7 @@ fn contract_export_response(
 fn apply_contract_export_filters<'a>(
     query: &mut QueryBuilder<'a, Postgres>,
     filters: &'a ContractSearchParams,
-    claims: Option<&'a shared::AuthClaims>,
+    claims: Option<&'a crate::auth::AuthClaims>,
 ) {
     query.push(" FROM contracts c JOIN publishers p ON p.id = c.publisher_id WHERE (c.visibility = 'public'");
     if let Some(claims) = claims {
@@ -1589,13 +1592,13 @@ fn apply_contract_export_filters<'a>(
         let search_pattern = format!("%{}%", query_text.to_ascii_lowercase());
         query.push(" AND (");
         query.push("c.search_vector @@ plainto_tsquery('english', ");
-        query.push_bind(query_text);
+        query.push_bind(query_text.to_string());
         query.push(") OR lower(c.name) LIKE ");
-        query.push_bind(&search_pattern);
+        query.push_bind(search_pattern.clone());
         query.push(" OR lower(coalesce(c.description, '')) LIKE ");
-        query.push_bind(&search_pattern);
+        query.push_bind(search_pattern.clone());
         query.push(" OR lower(c.contract_id) LIKE ");
-        query.push_bind(&search_pattern);
+        query.push_bind(search_pattern);
         query.push(")");
     }
 
@@ -1643,7 +1646,7 @@ fn apply_contract_export_filters<'a>(
 async fn count_contract_export_rows(
     state: &AppState,
     filters: &ContractSearchParams,
-    claims: Option<&shared::AuthClaims>,
+    claims: Option<&crate::auth::AuthClaims>,
 ) -> ApiResult<i64> {
     let mut query = QueryBuilder::<Postgres>::new("SELECT COUNT(*)");
     apply_contract_export_filters(&mut query, filters, claims);
@@ -1657,7 +1660,7 @@ async fn count_contract_export_rows(
 async fn fetch_contract_export_rows(
     state: &AppState,
     filters: &ContractSearchParams,
-    claims: Option<&shared::AuthClaims>,
+    claims: Option<&crate::auth::AuthClaims>,
 ) -> ApiResult<Vec<ContractMetadataExportRecord>> {
     let sort_by = filters.sort_by.clone().unwrap_or(shared::SortBy::CreatedAt);
     let sort_order = filters
@@ -1683,13 +1686,21 @@ async fn fetch_contract_export_rows(
 
     query.push(" ORDER BY ");
     match sort_by {
-        shared::SortBy::UpdatedAt => query.push("c.updated_at "),
-        shared::SortBy::VerifiedAt => query.push("c.verified_at "),
-        shared::SortBy::LastAccessedAt => query.push("c.last_accessed_at "),
-        shared::SortBy::Popularity | shared::SortBy::Interactions => {
-            query.push("c.last_accessed_at ")
+        shared::SortBy::UpdatedAt => {
+            query.push("c.updated_at ");
         }
-        shared::SortBy::Deployments => query.push("c.deployment_count "),
+        shared::SortBy::VerifiedAt => {
+            query.push("c.verified_at ");
+        }
+        shared::SortBy::LastAccessedAt => {
+            query.push("c.last_accessed_at ");
+        }
+        shared::SortBy::Popularity | shared::SortBy::Interactions => {
+            query.push("c.last_accessed_at ");
+        }
+        shared::SortBy::Deployments => {
+            query.push("c.deployment_count ");
+        }
         shared::SortBy::Relevance => {
             if let Some(query_text) = filters
                 .query
@@ -1697,13 +1708,15 @@ async fn fetch_contract_export_rows(
                 .filter(|value| !value.trim().is_empty())
             {
                 query.push("ts_rank_cd(c.search_vector, plainto_tsquery('english', ");
-                query.push_bind(query_text);
+                query.push_bind(query_text.to_string());
                 query.push(")) ");
             } else {
                 query.push("c.created_at ");
             }
         }
-        shared::SortBy::CreatedAt => query.push("c.created_at "),
+        shared::SortBy::CreatedAt => {
+            query.push("c.created_at ");
+        }
     };
     query.push(direction);
     query.push(" NULLS LAST, c.id ");
@@ -1720,7 +1733,7 @@ async fn generate_contract_export_payload(
     state: &AppState,
     filters: &ContractSearchParams,
     format: &ContractExportFormat,
-    claims: Option<&shared::AuthClaims>,
+    claims: Option<&crate::auth::AuthClaims>,
     async_export: bool,
 ) -> ApiResult<(String, i64)> {
     let contracts = fetch_contract_export_rows(state, filters, claims).await?;
@@ -1761,7 +1774,7 @@ async fn persist_contract_export_artifact(path: &StdPath, content: String) -> Ap
 )]
 pub async fn export_contract_metadata(
     State(state): State<AppState>,
-    claims: Option<shared::AuthClaims>,
+    claims: Option<crate::auth::AuthClaims>,
     ValidatedJson(req): ValidatedJson<ContractExportRequest>,
 ) -> ApiResult<Response> {
     let filters = sanitized_export_filters(req.filters.clone());
@@ -4849,7 +4862,15 @@ pub async fn get_contract_deployments(
         // Try resolving by Stellar ID
         let uuid = dependency::resolve_contract_id(&state.db, &id)
             .await
-            .map_err(|err| ApiError::not_found(format!("Contract {} not found: {}", id, err)))?;
+            .map_err(|err| {
+                ApiError::not_found(
+                    "CONTRACT_NOT_FOUND",
+                    format!("Contract {} not found: {}", id, err),
+                )
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("CONTRACT_NOT_FOUND", format!("Contract {} not found", id))
+            })?;
 
         let logical_id: Option<Uuid> =
             sqlx::query_scalar("SELECT logical_id FROM contracts WHERE id = $1")
@@ -4870,7 +4891,10 @@ pub async fn get_contract_deployments(
     };
 
     if target_uuids.is_empty() {
-        return Err(ApiError::not_found(format!("Contract {} not found", id)));
+        return Err(ApiError::not_found(
+            "CONTRACT_NOT_FOUND",
+            format!("Contract {} not found", id),
+        ));
     }
 
     // Pagination info

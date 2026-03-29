@@ -238,7 +238,7 @@ impl Validatable for ContractExportRequest {
                 Ok(())
             });
             for (index, category) in categories.iter().enumerate() {
-                builder.check(format!("filters.categories[{index}]"), || {
+                builder.check(&format!("filters.categories[{index}]"), || {
                     validate_length(category, 1, 100)
                 });
             }

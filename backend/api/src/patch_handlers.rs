@@ -48,7 +48,7 @@ pub struct PatchListResponse {
     pub storage_savings_pct: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReconstructRequest {
     /// Target semver version to reconstruct.
     pub target_version: String,
@@ -67,13 +67,13 @@ pub struct ReconstructedVersion {
     pub reconstructed_via_patches: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BulkApplyRequest {
     /// List of (contract_id, target_version) pairs to reconstruct in bulk.
     pub targets: Vec<BulkTarget>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BulkTarget {
     pub contract_id: String,
     pub target_version: String,
@@ -382,25 +382,25 @@ fn apply_patch_to_state(state: &mut ReconstructedVersion, patch: &ContractPatch)
     if let Some(v) = fields.get("wasm_hash").and_then(|v| v.as_str()) {
         state.wasm_hash = v.to_owned();
     }
-    if fields.contains_key("source_url") {
+    if fields.get("source_url").is_some() {
         state.source_url = fields
             .get("source_url")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
     }
-    if fields.contains_key("commit_hash") {
+    if fields.get("commit_hash").is_some() {
         state.commit_hash = fields
             .get("commit_hash")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
     }
-    if fields.contains_key("release_notes") {
+    if fields.get("release_notes").is_some() {
         state.release_notes = fields
             .get("release_notes")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
     }
-    if fields.contains_key("state_schema") {
+    if fields.get("state_schema").is_some() {
         state.state_schema = fields.get("state_schema").cloned();
     }
 }
