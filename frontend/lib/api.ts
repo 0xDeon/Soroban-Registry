@@ -25,6 +25,33 @@ import {
 
 export type Network = "mainnet" | "testnet" | "futurenet";
 
+export type NetworkStatus = "online" | "offline" | "degraded";
+
+export interface NetworkEndpoints {
+  rpc_url: string;
+  health_url: string;
+  explorer_url: string;
+  friendbot_url?: string;
+}
+
+export interface NetworkInfo {
+  id: string;
+  name: string;
+  network_type: Network;
+  status: NetworkStatus;
+  endpoints: NetworkEndpoints;
+  last_checked_at: string;
+  last_indexed_ledger_height?: number;
+  last_indexed_at?: string;
+  consecutive_failures: number;
+  status_message?: string;
+}
+
+export interface NetworkListResponse {
+  networks: NetworkInfo[];
+  cached_at: string;
+}
+
 /** Per-network config (Issue #43) */
 export interface NetworkConfig {
   contract_id: string;
@@ -50,6 +77,8 @@ export interface Contract {
   logo_url?: string;
   created_at: string;
   updated_at: string;
+  verified_at?: string;
+  last_accessed_at?: string;
   is_maintenance?: boolean;
   /** Logical contract grouping (Issue #43) */
   logical_id?: string;
@@ -140,6 +169,54 @@ export interface ContractVersion {
   created_at: string;
 }
 
+export interface ContractAbiResponse {
+  abi: unknown;
+}
+
+export interface ContractChangelogEntry {
+  version: string;
+  created_at: string;
+  commit_hash?: string;
+  source_url?: string;
+  release_notes?: string;
+  breaking: boolean;
+  breaking_changes: string[];
+}
+
+export interface ContractChangelogResponse {
+  contract_id: string;
+  entries: ContractChangelogEntry[];
+}
+
+export interface RecommendationReason {
+  code: string;
+  message: string;
+  weight: number;
+}
+
+export interface RecommendedContract {
+  id: string;
+  contract_id: string;
+  name: string;
+  description?: string;
+  network: Network;
+  category?: string;
+  popularity_score: number;
+  similarity_score: number;
+  recommendation_score: number;
+  reasons: RecommendationReason[];
+  explanation: string;
+}
+
+export interface ContractRecommendationsResponse {
+  contract_id: string;
+  algorithm: string;
+  ab_variant: string;
+  cached: boolean;
+  generated_at: string;
+  recommendations: RecommendedContract[];
+}
+
 export interface Publisher {
   id: string;
   stellar_address: string;
@@ -191,6 +268,18 @@ export interface ContractSearchParams {
   page_size?: number;
   sort_by?: 'name' | 'created_at' | 'updated_at' | 'popularity' | 'deployments' | 'interactions' | 'relevance' | 'downloads';
   sort_order?: 'asc' | 'desc';
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface SearchSuggestion {
+  text: string;
+  kind: string;
+  score: number;
+}
+
+export interface SearchSuggestionsResponse {
+  items: SearchSuggestion[];
 }
 
 export interface PublishRequest {
@@ -312,29 +401,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
 /**
- * Helper to create a mock response with a delay
- */
-function _mockResponse<T>(data: T, delay = 300): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(data), delay));
-}
-
-/**
- * Helper to build query string from params object
- */
-function _buildQueryParams(params: Record<string, string | number | boolean | string[] | undefined>): URLSearchParams {
-  const qs = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null) continue;
-    if (Array.isArray(value)) {
-      value.forEach(v => qs.append(key, v));
-    } else {
-      qs.append(key, String(value));
-    }
-  }
-  return qs;
-}
-
-/**
  * Wrapper for API calls with consistent error handling
  */
 async function handleApiCall<T>(
@@ -387,6 +453,63 @@ async function handleApiCall<T>(
 }
 
 export const api = {
+  async getNetworks(): Promise<NetworkListResponse> {
+    if (USE_MOCKS) {
+      const now = new Date().toISOString();
+      return {
+        cached_at: now,
+        networks: [
+          {
+            id: "mainnet",
+            name: "Stellar Mainnet",
+            network_type: "mainnet",
+            status: "online",
+            endpoints: {
+              rpc_url: "https://rpc-mainnet.stellar.org",
+              health_url: "https://rpc-mainnet.stellar.org/health",
+              explorer_url: "https://stellar.expert/explorer/public",
+            },
+            last_checked_at: now,
+            consecutive_failures: 0,
+          },
+          {
+            id: "testnet",
+            name: "Stellar Testnet",
+            network_type: "testnet",
+            status: "online",
+            endpoints: {
+              rpc_url: "https://rpc-testnet.stellar.org",
+              health_url: "https://rpc-testnet.stellar.org/health",
+              explorer_url: "https://stellar.expert/explorer/testnet",
+              friendbot_url: "https://friendbot.stellar.org",
+            },
+            last_checked_at: now,
+            consecutive_failures: 0,
+          },
+          {
+            id: "futurenet",
+            name: "Stellar Futurenet",
+            network_type: "futurenet",
+            status: "online",
+            endpoints: {
+              rpc_url: "https://rpc-futurenet.stellar.org",
+              health_url: "https://rpc-futurenet.stellar.org/health",
+              explorer_url: "https://stellar.expert/explorer/futurenet",
+              friendbot_url: "https://friendbot-futurenet.stellar.org",
+            },
+            last_checked_at: now,
+            consecutive_failures: 0,
+          },
+        ],
+      };
+    }
+
+    return handleApiCall<NetworkListResponse>(
+      () => fetch(`${API_URL}/networks`),
+      "/networks",
+    );
+  },
+
   // Contract endpoints
   async getContracts(
     params?: ContractSearchParams,
@@ -449,6 +572,17 @@ export const api = {
             filtered = filtered.filter((c) => c.is_verified);
           }
 
+          if (params?.date_from) {
+            const fromTime = new Date(params.date_from).getTime();
+            filtered = filtered.filter((c) => new Date(c.created_at).getTime() >= fromTime);
+          }
+          if (params?.date_to) {
+            const toDate = new Date(params.date_to);
+            toDate.setUTCHours(23, 59, 59, 999);
+            const toTime = toDate.getTime();
+            filtered = filtered.filter((c) => new Date(c.created_at).getTime() <= toTime);
+          }
+
           const sortBy = params?.sort_by || "created_at";
           const sortOrder = params?.sort_order || "desc";
           filtered.sort((a, b) => {
@@ -493,12 +627,12 @@ export const api = {
     const queryParams = new URLSearchParams();
     if (params?.query) queryParams.append("query", params.query);
     if (params?.network) queryParams.append("network", params.network);
-    params?.networks?.forEach((network) => queryParams.append("network", network));
+    params?.networks?.forEach((network) => queryParams.append("networks", network));
     if (params?.verified_only !== undefined)
       queryParams.append("verified_only", String(params.verified_only));
     if (params?.category) queryParams.append("category", params.category);
     params?.categories?.forEach((category) =>
-      queryParams.append("category", category),
+      queryParams.append("categories", category),
     );
     if (params?.language) queryParams.append("language", params.language);
     params?.languages?.forEach((language) =>
@@ -506,14 +640,11 @@ export const api = {
     );
     if (params?.author) queryParams.append("author", params.author);
     params?.tags?.forEach((tag) => queryParams.append("tag", tag));
-    // Backend expects sort_by without underscores: createdat, updatedat, popularity, deployments, interactions, relevance
+    // Backend accepts sort_by as specified (e.g. created_at, updated_at, popularity, deployments).
+    // For legacy UI labels we keep a small compatibility mapping.
     if (params?.sort_by) {
       const backendSortBy =
-        params.sort_by === 'created_at' ? 'createdat'
-        : params.sort_by === 'updated_at' ? 'updatedat'
-        : params.sort_by === 'name' ? 'name'
-        : params.sort_by === 'downloads' ? 'interactions'
-        : params.sort_by;
+        params.sort_by === 'downloads' ? 'interactions' : params.sort_by;
       queryParams.append("sort_by", backendSortBy);
     }
     if (params?.sort_order) queryParams.append("sort_order", params.sort_order);
@@ -525,12 +656,53 @@ export const api = {
       () => fetch(`${API_URL}/api/contracts?${queryParams}`),
       '/api/contracts'
     );
-    // Backend may return "contracts" instead of "items" — normalize for PaginatedResponse
+    // Normalize legacy field names from older backend responses
     const raw = data as unknown as Record<string, unknown>;
-    if (Array.isArray(raw.contracts) && data.items === undefined) {
-      return { ...data, items: raw.contracts as Contract[] };
+    const normalized = { ...data } as PaginatedResponse<Contract> & Record<string, unknown>;
+    if (Array.isArray(raw.contracts) && !Array.isArray(raw.items)) {
+      normalized.items = raw.contracts as Contract[];
     }
-    return data;
+    if (typeof raw.pages === 'number' && raw.total_pages === undefined) {
+      normalized.total_pages = raw.pages as number;
+    }
+    return normalized;
+  },
+
+  async getContractSearchSuggestions(
+    q: string,
+    limit = 8,
+  ): Promise<SearchSuggestionsResponse> {
+    if (USE_MOCKS) {
+      const lowered = q.trim().toLowerCase();
+      if (!lowered) {
+        return { items: [] };
+      }
+
+      const items = Array.from(
+        new Set(
+          MOCK_CONTRACTS
+            .flatMap((contract) => [contract.name, contract.category].filter(Boolean))
+            .filter((value: string) => value.toLowerCase().includes(lowered)),
+        ),
+      )
+        .slice(0, limit)
+        .map((text) => ({
+          text,
+          kind: MOCK_CONTRACTS.some((contract) => contract.name === text) ? 'contract' : 'category',
+          score: 1,
+        }));
+
+      return { items };
+    }
+
+    const params = new URLSearchParams();
+    params.set("q", q);
+    params.set("limit", String(limit));
+
+    return handleApiCall<SearchSuggestionsResponse>(
+      () => fetch(`${API_URL}/api/contracts/suggestions?${params.toString()}`),
+      "/api/contracts/suggestions",
+    );
   },
 
   async getContract(id: string, network?: Network): Promise<ContractGetResponse> {
@@ -619,6 +791,22 @@ export const api = {
     );
   },
 
+  async getContractAbi(id: string, version?: string): Promise<ContractAbiResponse> {
+    const url = new URL(`${API_URL}/api/contracts/${id}/abi`);
+    if (version) url.searchParams.set("version", version);
+    return handleApiCall<ContractAbiResponse>(
+      () => fetch(url.toString()),
+      `/api/contracts/${id}/abi`
+    );
+  },
+
+  async getContractChangelog(id: string): Promise<ContractChangelogResponse> {
+    return handleApiCall<ContractChangelogResponse>(
+      () => fetch(`${API_URL}/api/contracts/${id}/changelog`),
+      `/api/contracts/${id}/changelog`
+    );
+  },
+
   async getContractDependencies(id: string): Promise<DependencyTreeNode[]> {
     return handleApiCall<DependencyTreeNode[]>(
       () => fetch(`${API_URL}/api/contracts/${id}/dependencies`),
@@ -649,6 +837,22 @@ export const api = {
     const response = await fetch(`${API_URL}/api/contracts/${id}/analytics`);
     if (!response.ok) throw new Error("Failed to fetch contract analytics");
     return response.json();
+  },
+
+  async getContractRecommendations(
+    id: string,
+    params?: { limit?: number; network?: Network; subject?: string; algorithm?: "hybrid_v1" | "hybrid_v2" },
+  ): Promise<ContractRecommendationsResponse> {
+    const search = new URLSearchParams();
+    if (params?.limit != null) search.set("limit", String(params.limit));
+    if (params?.network) search.set("network", params.network);
+    if (params?.subject) search.set("subject", params.subject);
+    if (params?.algorithm) search.set("algorithm", params.algorithm);
+
+    return handleApiCall<ContractRecommendationsResponse>(
+      () => fetch(`${API_URL}/api/contracts/${id}/recommendations${search.toString() ? `?${search.toString()}` : ""}`),
+      `/api/contracts/${id}/recommendations`
+    );
   },
 
   async publishContract(data: PublishRequest): Promise<Contract> {
@@ -1074,6 +1278,145 @@ export const api = {
       `/api/admin/migrations/${version}/rollback`
     );
   },
+
+  // Advanced Search (Issue #51)
+  async advancedSearchContracts(
+    req: AdvancedSearchRequest
+  ): Promise<PaginatedResponse<Contract>> {
+    return handleApiCall<PaginatedResponse<Contract>>(
+      () => fetch(`${API_URL}/api/contracts/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      }),
+      '/api/contracts/search'
+    );
+  },
+
+  async listFavoriteSearches(): Promise<FavoriteSearch[]> {
+    return handleApiCall<FavoriteSearch[]>(
+      () => fetch(`${API_URL}/api/favorites/search`),
+      '/api/favorites/search'
+    );
+  },
+
+  async saveFavoriteSearch(req: SaveFavoriteSearchRequest): Promise<FavoriteSearch> {
+    return handleApiCall<FavoriteSearch>(
+      () => fetch(`${API_URL}/api/favorites/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      }),
+      '/api/favorites/search'
+    );
+  },
+
+  async deleteFavoriteSearch(id: string): Promise<void> {
+    const response = await fetch(`${API_URL}/api/favorites/search/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to delete favorite search: ${response.statusText}`);
+    }
+  },
+
+  // ── Contract Comments / Discussion (Issue #516) ───────────────────────────
+
+  async getComments(contractId: string): Promise<CommentListResponse> {
+    if (USE_MOCKS || typeof window !== 'undefined') {
+      return Promise.resolve(getLocalComments(contractId));
+    }
+    return handleApiCall<CommentListResponse>(
+      () => fetch(`${API_URL}/api/contracts/${contractId}/comments`),
+      `/api/contracts/${contractId}/comments`
+    );
+  },
+
+  async postComment(
+    contractId: string,
+    body: string,
+    parentId?: string
+  ): Promise<Comment> {
+    if (USE_MOCKS || typeof window !== 'undefined') {
+      const comment: Comment = {
+        id: `local-${Date.now()}`,
+        contract_id: contractId,
+        parent_id: parentId ?? null,
+        author: 'You',
+        body,
+        created_at: new Date().toISOString(),
+        score: 0,
+        flagged: false,
+        flag_count: 0,
+      };
+      const stored = getLocalComments(contractId);
+      stored.items.unshift(comment);
+      stored.total += 1;
+      setLocalComments(contractId, stored);
+      return Promise.resolve(comment);
+    }
+    return handleApiCall<Comment>(
+      () =>
+        fetch(`${API_URL}/api/contracts/${contractId}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body, parent_id: parentId }),
+        }),
+      `/api/contracts/${contractId}/comments`
+    );
+  },
+
+  async voteComment(
+    commentId: string,
+    contractId: string,
+    direction: 'up' | 'down'
+  ): Promise<CommentVote> {
+    if (USE_MOCKS || typeof window !== 'undefined') {
+      const stored = getLocalComments(contractId);
+      stored.items = stored.items.map((c) =>
+        c.id === commentId
+          ? { ...c, score: c.score + (direction === 'up' ? 1 : -1) }
+          : c
+      );
+      setLocalComments(contractId, stored);
+      return Promise.resolve({ comment_id: commentId, direction });
+    }
+    return handleApiCall<CommentVote>(
+      () =>
+        fetch(`${API_URL}/api/comments/${commentId}/vote`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction }),
+        }),
+      `/api/comments/${commentId}/vote`
+    );
+  },
+
+  async flagComment(
+    commentId: string,
+    contractId: string,
+    reason: string
+  ): Promise<CommentFlag> {
+    if (USE_MOCKS || typeof window !== 'undefined') {
+      const stored = getLocalComments(contractId);
+      stored.items = stored.items.map((c) =>
+        c.id === commentId
+          ? { ...c, flagged: true, flag_count: c.flag_count + 1 }
+          : c
+      );
+      setLocalComments(contractId, stored);
+      return Promise.resolve({ comment_id: commentId, reason });
+    }
+    return handleApiCall<CommentFlag>(
+      () =>
+        fetch(`${API_URL}/api/comments/${commentId}/flag`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        }),
+      `/api/comments/${commentId}/flag`
+    );
+  },
 };
 
 export interface Template {
@@ -1109,6 +1452,10 @@ export interface GraphEdge {
   source: string;
   target: string;
   dependency_type: string;
+  call_frequency?: number;
+  call_volume?: number;
+  is_estimated?: boolean;
+  is_circular?: boolean;
 }
 
 export interface GraphResponse {
@@ -1349,4 +1696,122 @@ export interface FormalVerificationReport {
 export interface RunVerificationRequest {
   properties_file: string;
   verifier_version?: string;
+}
+
+// ─── Advanced Search & Favorites (Issue #51) ─────────────────────────────────
+
+export type QueryOperator = 'AND' | 'OR';
+export type FieldOperator = 'eq' | 'ne' | 'gt' | 'lt' | 'in' | 'contains' | 'starts_with';
+
+export interface QueryCondition {
+  field: string;
+  operator: FieldOperator;
+  value: string | number | boolean | string[];
+}
+
+export type QueryNode = 
+  | QueryCondition 
+  | { operator: QueryOperator; conditions: QueryNode[] };
+
+export interface AdvancedSearchRequest {
+  query: QueryNode;
+  sort_by?: ContractSearchParams['sort_by'];
+  sort_order?: ContractSearchParams['sort_order'];
+  limit?: number;
+  offset?: number;
+}
+
+export interface FavoriteSearch {
+  id: string;
+  user_id?: string;
+  name: string;
+  query_json: QueryNode;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaveFavoriteSearchRequest {
+  name: string;
+  query: QueryNode;
+}
+
+// ─── Comment / Discussion (Issue #516) ───────────────────────────────────────
+
+export interface Comment {
+  id: string;
+  contract_id: string;
+  parent_id: string | null;
+  author: string;
+  body: string;
+  created_at: string;
+  score: number;
+  flagged: boolean;
+  flag_count: number;
+}
+
+export interface CommentVote {
+  comment_id: string;
+  direction: 'up' | 'down';
+}
+
+export interface CommentFlag {
+  comment_id: string;
+  reason: string;
+}
+
+export interface CommentListResponse {
+  items: Comment[];
+  total: number;
+}
+
+const COMMENT_STORAGE_PREFIX = 'soroban_comments_';
+
+function seedComments(contractId: string): CommentListResponse {
+  const now = new Date();
+  const older = new Date(now.getTime() - 1000 * 60 * 60 * 24).toISOString();
+  const root: Comment = {
+    id: 'seed-1',
+    contract_id: contractId,
+    parent_id: null,
+    author: 'GDRXE7BFEBOWQ3BHPNFTUOBCIGGKCGJPNIDZWNOSIROWKJZTIVWY5WYP',
+    body: 'Great contract. Works well with the token factory. One thing to note: calling `transfer` with a zero amount will silently succeed rather than returning an error.',
+    created_at: older,
+    score: 4,
+    flagged: false,
+    flag_count: 0,
+  };
+  const reply: Comment = {
+    id: 'seed-2',
+    contract_id: contractId,
+    parent_id: 'seed-1',
+    author: 'GCO2IP3MJNUOKS4PUDI4C7LGGMQDJGXG3COYX3WSB4HHNAHKYV5YL3VC',
+    body: 'Confirmed. Also worth checking the `allowance` return value before calling `transfer_from` — the ABI says `i128` but the error is opaque when allowance is exceeded.',
+    created_at: now.toISOString(),
+    score: 2,
+    flagged: false,
+    flag_count: 0,
+  };
+  return { items: [root, reply], total: 2 };
+}
+
+function getLocalComments(contractId: string): CommentListResponse {
+  if (typeof window === 'undefined') return { items: [], total: 0 };
+  const key = `${COMMENT_STORAGE_PREFIX}${contractId}`;
+  const raw = window.localStorage.getItem(key);
+  if (!raw) {
+    const seeded = seedComments(contractId);
+    window.localStorage.setItem(key, JSON.stringify(seeded));
+    return seeded;
+  }
+  try {
+    return JSON.parse(raw) as CommentListResponse;
+  } catch {
+    return { items: [], total: 0 };
+  }
+}
+
+function setLocalComments(contractId: string, data: CommentListResponse): void {
+  if (typeof window === 'undefined') return;
+  const key = `${COMMENT_STORAGE_PREFIX}${contractId}`;
+  window.localStorage.setItem(key, JSON.stringify(data));
 }

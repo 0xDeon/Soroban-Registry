@@ -14,8 +14,14 @@ export const ThemeContext = createContext<ThemeContextType | undefined>(undefine
 
 export function useTheme() {
   const context = useContext(ThemeContext);
-  if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+
+  if (context !== undefined) {
+    return context;
   }
-  return context;
+
+  return {
+    theme: 'system' as Theme,
+    setTheme: () => undefined,
+    resolvedTheme: 'light' as const,
+  };
 }

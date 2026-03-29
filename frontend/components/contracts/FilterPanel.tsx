@@ -1,5 +1,5 @@
-import { ContractSearchParams } from '@/lib/api';
-import { ChevronDown, RotateCcw, Check } from 'lucide-react';
+import type { ContractSearchParams } from '@/lib/api';
+import { Check, ChevronDown, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type NetworkFilter = NonNullable<ContractSearchParams['network']>;
@@ -17,12 +17,18 @@ interface FilterPanelProps {
   languages: string[];
   selectedLanguages: string[];
   onToggleLanguage: (value: string) => void;
+  networks: NetworkFilter[];
   selectedNetworks: NetworkFilter[];
   onToggleNetwork: (value: NetworkFilter) => void;
   author: string;
   onAuthorChange: (value: string) => void;
   verifiedOnly: boolean;
   onVerifiedChange: (value: boolean) => void;
+  dateFrom?: string;
+  dateTo?: string;
+  onDateRangeChange?: (from: string, to: string) => void;
+  activeCounts?: Record<string, number>;
+  onClearAll?: () => void;
 }
 
 function CategoryMultiSelect({
@@ -182,7 +188,9 @@ function CheckboxGroup({
 }) {
   return (
     <div>
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{title}</p>
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        {title}
+      </p>
       <div className="space-y-1.5">
         {options.map((option) => {
           const isSelected = selected.includes(option);
@@ -197,11 +205,19 @@ function CheckboxGroup({
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'
               }`}
             >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                isSelected ? 'bg-primary border-primary' : 'border-border'
-              }`}>
+              <div
+                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                  isSelected ? 'bg-primary border-primary' : 'border-border'
+                }`}
+              >
                 {isSelected && (
-                  <svg className="w-3 h-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <svg
+                    className="w-3 h-3 text-primary-foreground"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={3}
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 )}
@@ -223,6 +239,7 @@ export function FilterPanel({
   languages,
   selectedLanguages,
   onToggleLanguage,
+  networks,
   selectedNetworks,
   onToggleNetwork,
   author,
@@ -230,8 +247,6 @@ export function FilterPanel({
   verifiedOnly,
   onVerifiedChange,
 }: FilterPanelProps) {
-  const networks: NetworkFilter[] = ['mainnet', 'testnet', 'futurenet'];
-
   return (
     <div className="space-y-5">
       <CategoryMultiSelect
@@ -249,7 +264,9 @@ export function FilterPanel({
       />
 
       <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Network</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+          Network
+        </p>
         <div className="space-y-1.5">
           {networks.map((network) => {
             const isSelected = selectedNetworks.includes(network);
@@ -264,11 +281,19 @@ export function FilterPanel({
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                  isSelected ? 'bg-primary border-primary' : 'border-border'
-                }`}>
+                <div
+                  className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                    isSelected ? 'bg-primary border-primary' : 'border-border'
+                  }`}
+                >
                   {isSelected && (
-                    <svg className="w-3 h-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <svg
+                      className="w-3 h-3 text-primary-foreground"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={3}
+                    >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   )}
@@ -302,11 +327,19 @@ export function FilterPanel({
             : 'text-muted-foreground hover:text-foreground hover:bg-accent'
         }`}
       >
-        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-          verifiedOnly ? 'bg-green-500 border-green-500' : 'border-border'
-        }`}>
+        <div
+          className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+            verifiedOnly ? 'bg-green-500 border-green-500' : 'border-border'
+          }`}
+        >
           {verifiedOnly && (
-            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <svg
+              className="w-3 h-3 text-white"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={3}
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           )}
