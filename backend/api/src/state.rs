@@ -3,12 +3,17 @@ use crate::cache::{CacheConfig, CacheLayer};
 use crate::contract_events::ContractEventHub;
 use crate::health_monitor::HealthMonitorStatus;
 use crate::resource_tracking::ResourceManager;
+use shared::error::Result;
+use shared::source_storage::SourceStorage;
+
 use prometheus::Registry;
 use shared::source_storage::SourceStorage;
 use sqlx::PgPool;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
+
+
 use tokio::sync::broadcast;
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -51,6 +56,7 @@ pub struct AppState {
     pub source_storage: Arc<SourceStorage>,
     pub event_broadcaster: broadcast::Sender<RealtimeEvent>,
 }
+
 
 impl AppState {
     pub async fn new(
