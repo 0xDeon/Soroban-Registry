@@ -20,7 +20,6 @@ pub struct VerificationResult {
     pub message: Option<String>,
 }
 
-/// Verify that source code matches deployed contract bytecode.
 pub async fn verify_contract(
     source_code: &str,
     deployed_wasm_hash: &str,

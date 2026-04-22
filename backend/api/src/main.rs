@@ -10,26 +10,44 @@ mod breaking_changes;
 mod cache;
 mod canary_handlers;
 mod compatibility_testing_handlers;
+mod contract_events;
+mod contributor_handlers;
 mod db_monitoring;
+mod graphql;
+mod interoperability;
+mod interoperability_handlers;
 
 mod activity_feed_handlers;
 mod activity_feed_routes;
+mod analytics_handlers;
+mod category_handlers;
 mod custom_metrics_handlers;
 mod dependency;
+mod dependency_handlers;
 mod deprecation_handlers;
 mod error;
+mod events;
 mod handlers;
 mod health;
 pub mod health_monitor;
 #[cfg(test)]
 mod health_tests;
+mod incident_handlers;
+mod incident_routes;
 mod metrics;
 mod metrics_handler;
 mod migration_handlers;
+mod models;
+mod multisig_handlers;
+mod multisig_routes;
+mod onchain_verification;
 #[cfg(feature = "openapi")]
 mod openapi;
+mod org_handlers;
+mod patch_handlers;
 mod performance_handlers;
 mod rate_limit;
+mod recommendation_handlers;
 mod release_notes_handlers;
 mod release_notes_routes;
 pub mod request_tracing;
@@ -38,11 +56,14 @@ mod resource_tracking;
 mod routes;
 pub mod security_log;
 pub mod signing_handlers;
+mod similarity_handlers;
 mod simulation;
 mod simulation_handlers;
 mod state;
+
 mod type_safety;
 mod validation;
+mod websocket;
 
 use anyhow::Result;
 use axum::extract::{Request, State};
@@ -61,9 +82,13 @@ async fn track_in_flight_middleware(
     State(state): State<AppState>,
     req: Request,
     next: middleware::Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, ApiError> {
     if state.is_shutting_down.load(Ordering::Relaxed) {
-        return Err(StatusCode::SERVICE_UNAVAILABLE);
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            "Service is shutting down and temporarily unavailable",
+        ));
     }
     crate::metrics::HTTP_IN_FLIGHT.inc();
     let res = next.run(req).await;
@@ -71,6 +96,7 @@ async fn track_in_flight_middleware(
     Ok(res)
 }
 
+use crate::error::ApiError;
 use crate::rate_limit::RateLimitState;
 use crate::state::AppState;
 
@@ -160,7 +186,10 @@ async fn main() -> Result<()> {
     let je = job_engine.clone();
     tokio::spawn(async move { je.run_worker(job_rx).await });
 
-    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone());
+    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone()).await?;
+
+    // Initialize GraphQL schema
+    let schema = graphql::schema::build_schema(state.clone());
 
     // Spawn the background DB and cache monitoring task
     db_monitoring::spawn_db_monitoring_task(pool.clone(), state.cache.clone());
@@ -170,6 +199,11 @@ async fn main() -> Result<()> {
     let hm_status = state.health_monitor_status.clone();
     tokio::spawn(async move {
         health_monitor::run_health_monitor(hm_state, hm_status).await;
+    });
+
+    let network_state = state.clone();
+    tokio::spawn(async move {
+        handlers::run_network_catalog_refresh(network_state).await;
     });
 
     // Warm up the cache
@@ -203,26 +237,46 @@ async fn main() -> Result<()> {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            crate::request_tracing::X_REQUEST_ID.clone(),
+            crate::request_tracing::X_CORRELATION_ID.clone(),
+        ])
+        .expose_headers([
+            crate::request_tracing::X_REQUEST_ID.clone(),
+            crate::request_tracing::X_CORRELATION_ID.clone(),
+        ]);
 
     // Build router
     let app = Router::new()
         .merge(routes::auth_routes())
+        .merge(routes::organization_routes())
         .merge(routes::contract_routes())
         .merge(routes::publisher_routes())
+        .merge(routes::contributor_routes())
         .merge(routes::health_routes())
+        .merge(routes::migration_routes())
+        .merge(incident_routes::incident_routes())
+        .merge(routes::network_routes())
         .merge(routes::openapi_routes())
         .merge(routes::health_monitor_routes())
         .merge(routes::admin_routes())
+        .merge(routes::category_routes())
         .merge(routes::compatibility_dashboard_routes())
         .merge(routes::canary_routes())
         .merge(routes::ab_test_routes())
         .merge(routes::performance_routes())
+        .merge(routes::federation_routes())
+        .merge(multisig_routes::routes())
         .merge(routes::observability_routes())
+        .merge(routes::websocket_routes())
+        .merge(routes::validator_routes())
         .merge(release_notes_routes::release_notes_routes())
+        .route("/api/graphql", axum::routing::post(graphql::graphql_handler).with_state(schema))
+        .route("/api/graphql/playground", axum::routing::get(graphql::graphql_playground))
         .nest("/api", activity_feed_routes::routes())
         .fallback(handlers::route_not_found)
-        .layer(middleware::from_fn(request_tracing::tracing_middleware))
         .layer(middleware::from_fn(
             validation::payload_size::payload_size_validation_middleware,
         ))
@@ -238,6 +292,7 @@ async fn main() -> Result<()> {
             rate_limit::rate_limit_middleware,
         ))
         .layer(cors)
+        .layer(middleware::from_fn(request_tracing::tracing_middleware))
         .with_state(state.clone());
 
     // Start server (port configurable via PORT env var, default 3001)

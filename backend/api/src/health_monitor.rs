@@ -378,6 +378,12 @@ mod tests {
             is_maintenance: false,
             logical_id: None,
             network_configs: None,
+            verified_at: None,
+            last_accessed_at: None,
+            relevance_score: None,
+            organization_id: None,
+            visibility: shared::VisibilityType::Public,
+            current_version: None,
         }
     }
 

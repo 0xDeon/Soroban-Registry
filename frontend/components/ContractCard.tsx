@@ -1,108 +1,205 @@
-import { Contract } from '@/lib/api';
-import { CheckCircle2, Clock, ExternalLink, Tag } from 'lucide-react';
+import type { Contract } from '@/lib/api';
+import {
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  ExternalLink,
+  Eye,
+  Layers3,
+  Tag,
+} from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import React from 'react';
-import HealthWidget from './HealthWidget';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { formatContractId } from '@/lib/utils/formatting';
+import VerificationBadge from '@/components/verification/VerificationBadge';
+import HealthWidget from './HealthWidget';
+import ContractQuickViewModal from './contracts/ContractQuickViewModal';
 
 interface ContractCardProps {
   contract: Contract;
 }
 
 export default function ContractCard({ contract }: ContractCardProps) {
-  //declare logevent function to track clicks on contract cards
   const { logEvent } = useAnalytics();
+  const router = useRouter();
+  const [copied, setCopied] = React.useState(false);
+  const [quickViewOpen, setQuickViewOpen] = React.useState(false);
+
   const networkColors = {
     mainnet: 'bg-green-500/10 text-green-600 border-green-500/20',
     testnet: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
     futurenet: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   };
+  const networkDots = {
+    mainnet: 'bg-green-500',
+    testnet: 'bg-blue-500',
+    futurenet: 'bg-purple-500',
+  };
+
+  const address = formatContractId(contract.contract_id);
+  const categoryLabel = contract.category || 'uncategorized';
+  const deploymentCount =
+    typeof (contract as Contract & { deployment_count?: number }).deployment_count === 'number'
+      ? (contract as Contract & { deployment_count?: number }).deployment_count
+      : typeof (contract as Contract & { deployments?: number }).deployments === 'number'
+        ? (contract as Contract & { deployments?: number }).deployments
+        : '—';
+
+  const handleViewDetails = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    router.push(`/contracts/${contract.id}`);
+  };
+
+  const handleOpenQuickView = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setQuickViewOpen(true);
+    logEvent('contract_quick_view_opened', {
+      contract_id: contract.id,
+      contract_name: contract.name,
+      network: contract.network,
+    });
+  };
+
+  const handleCopyAddress = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      await navigator.clipboard.writeText(contract.contract_id);
+      setCopied(true);
+      logEvent('contract_address_copied', {
+        contract_id: contract.id,
+        contract_name: contract.name,
+      });
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      logEvent('contract_address_copy_failed', {
+        contract_id: contract.id,
+        contract_name: contract.name,
+      });
+    }
+  };
 
   return (
-    <Link href={`/contracts/${contract.id}`}
-          //log event when user clicks on contract card
-          onClick={() => 
-          logEvent("contract_viewed",{
-          contract_id: contract.id,
-          contract_name: contract.name,
-          network: contract.network
-        })
-      }>
+    <>
+      <Link
+        href={`/contracts/${contract.id}`}
+        onClick={() =>
+          logEvent('contract_viewed', {
+            contract_id: contract.id,
+            contract_name: contract.name,
+            network: contract.network,
+          })
+        }
+      >
+        <div className="group relative h-full overflow-hidden rounded-2xl border border-border bg-card transition-all card-hover glow-border gradient-border-card">
+          <div className="absolute inset-0 bg-linear-to-br from-primary/5 to-secondary/5 opacity-0 transition-opacity group-hover:opacity-100" />
 
-      <div className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-all card-hover glow-border gradient-border-card">
-        {/* Gradient overlay on hover */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-secondary/5 opacity-0 transition-opacity group-hover:opacity-100" />
-
-        <div className="relative p-6">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors truncate">
-                  {contract.name}
-                </h3>
-                {contract.is_verified && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[10px] font-semibold uppercase tracking-wide flex-shrink-0">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Verified
-                  </span>
-                )}
+          <div className="relative flex h-full flex-col p-6">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-2">
+                  <h3 className="truncate text-lg font-semibold text-foreground transition-colors group-hover:text-primary">
+                    {contract.name}
+                  </h3>
+                  {contract.is_verified && <VerificationBadge status="approved" />}
+                </div>
+                <p className="font-mono text-xs text-muted-foreground">
+                  {address}
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground font-mono">
-                {contract.contract_id.slice(0, 8)}...{contract.contract_id.slice(-6)}
+
+              <span
+                className={`ml-3 inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${networkColors[contract.network]}`}
+              >
+                <span className={`h-2 w-2 rounded-full ${networkDots[contract.network]}`} />
+                {contract.network}
+              </span>
+            </div>
+
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <span className="inline-flex max-w-[60%] items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                <Tag className="h-3 w-3 shrink-0" />
+                <span className="truncate">{categoryLabel}</span>
+              </span>
+              <span
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  contract.is_verified
+                    ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                    : 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20'
+                }`}
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                {contract.is_verified ? 'verified' : 'pending'}
+              </span>
+            </div>
+
+            {contract.description && (
+              <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                {contract.description}
               </p>
-            </div>
+            )}
 
-            <span className={`ml-3 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide border flex-shrink-0 ${networkColors[contract.network]}`}>
-              {contract.network}
-            </span>
-          </div>
-
-          {/* Description */}
-          {contract.description && (
-            <p className="text-sm text-muted-foreground mb-4 line-clamp-2 leading-relaxed">
-              {contract.description}
-            </p>
-          )}
-
-          {/* Tags */}
-          {contract.tags && contract.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {contract.tags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-xs text-primary font-medium"
-                >
-                  <Tag className="w-3 h-3" />
-                  {tag}
+            <div className="mb-4 grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+              <div className="flex items-center gap-1.5">
+                <Layers3 className="h-3.5 w-3.5" />
+                <span>Deployments: {deploymentCount}</span>
+              </div>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  Updated: {new Date(contract.updated_at).toLocaleDateString()}
                 </span>
-              ))}
-              {contract.tags.length > 3 && (
-                <span className="px-2 py-1 text-xs text-muted-foreground font-medium">
-                  +{contract.tags.length - 3}
-                </span>
-              )}
+              </div>
             </div>
-          )}
 
-          {/* Health Widget */}
-          <div onClick={(e: React.MouseEvent) => e.preventDefault()}>
-            <HealthWidget contract={contract} />
-          </div>
+            <p className="mb-4 truncate font-mono text-xs text-muted-foreground">{address}</p>
 
-          {/* Footer */}
-          <div className="flex items-center justify-between text-xs text-muted-foreground pt-4 mt-4 border-t border-border">
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
-              {new Date(contract.created_at).toLocaleDateString()}
+            <div className="mb-4" onClick={(event: React.MouseEvent) => event.preventDefault()}>
+              <HealthWidget contract={contract} />
             </div>
-            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-primary font-medium">
-              <span>View details</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+
+            <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={handleOpenQuickView}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                <span>Quick View</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleViewDetails}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                <span>View Details</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyAddress}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copied ? 'Copied' : 'Copy Address'}</span>
+              </button>
             </div>
           </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+
+      <ContractQuickViewModal
+        contract={contract}
+        isOpen={quickViewOpen}
+        onClose={() => setQuickViewOpen(false)}
+      />
+    </>
   );
 }
+

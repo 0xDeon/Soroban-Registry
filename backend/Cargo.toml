@@ -14,6 +14,8 @@ repository = "https://github.com/ALIPHATICHYD/Soroban-Registry"
 axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
+async-graphql = { version = "7.0", features = ["chrono", "uuid", "dataloader"] }
+async-graphql-axum = "7.0"
 
 # Database
 sqlx = { version = "0.8", features = [
@@ -27,6 +29,9 @@ sqlx = { version = "0.8", features = [
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+
+# WebSocket
+tokio-tungstenite = "0.24"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -81,7 +86,7 @@ wasmparser = "0.224"
 rust_decimal = "1.35"
 
 # OpenAPI
-utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "decimal"] }
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
 
 [profile.release]
