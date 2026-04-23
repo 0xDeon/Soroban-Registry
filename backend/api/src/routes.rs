@@ -5,9 +5,9 @@ use crate::{
     breaking_changes, canary_handlers, category_handlers, clone_federation_handlers,
     compatibility_testing_handlers, contract_events, custom_metrics_handlers,
     deprecation_handlers, handlers, interoperability_handlers, metrics_handler,
-    migration_handlers, org_handlers, performance_handlers, resource_handlers,
-    security_scan_handlers, similarity_handlers, simulation_handlers, state::AppState,
-    subscription_handlers, websocket,
+    migration_handlers, org_handlers, performance_handlers, plugin_marketplace_handlers,
+    resource_handlers, security_scan_handlers, similarity_handlers, simulation_handlers,
+    state::AppState, subscription_handlers, websocket,
 };
 
 
@@ -29,6 +29,18 @@ pub fn auth_routes() -> Router<AppState> {
     Router::new()
         .route("/api/auth/challenge", get(auth_handlers::get_challenge))
         .route("/api/auth/verify", post(auth_handlers::verify_challenge))
+}
+
+pub fn plugin_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/plugins/marketplace",
+            get(plugin_marketplace_handlers::get_marketplace),
+        )
+        .route(
+            "/api/plugins/:name/:version",
+            get(plugin_marketplace_handlers::get_plugin_manifest),
+        )
 }
 
 pub fn contract_routes() -> Router<AppState> {

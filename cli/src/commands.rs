@@ -682,12 +682,21 @@ pub async fn run_contract_tests(
     println!("{} {}", "Command:".bold(), selected_command.bright_blue());
 
     let start = std::time::Instant::now();
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(&selected_command)
-        .current_dir(contract_dir)
-        .output()
-        .with_context(|| format!("Failed to execute test command: {}", selected_command))?;
+    let output = if cfg!(windows) {
+        let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd".to_string());
+        Command::new(comspec)
+            .arg("/C")
+            .arg(&selected_command)
+            .current_dir(contract_dir)
+            .output()
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(&selected_command)
+            .current_dir(contract_dir)
+            .output()
+    }
+    .with_context(|| format!("Failed to execute test command: {}", selected_command))?;
 
     let duration = start.elapsed().as_secs_f64();
     let stdout = String::from_utf8_lossy(&output.stdout);

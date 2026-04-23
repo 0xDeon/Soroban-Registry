@@ -45,6 +45,7 @@ mod onchain_verification;
 mod openapi;
 mod org_handlers;
 mod patch_handlers;
+mod plugin_marketplace_handlers;
 mod performance_handlers;
 mod rate_limit;
 mod recommendation_handlers;
@@ -251,6 +252,7 @@ async fn main() -> Result<()> {
     // Build router
     let app = Router::new()
         .merge(routes::auth_routes())
+        .merge(routes::plugin_routes())
         .merge(routes::organization_routes())
         .merge(routes::contract_routes())
         .merge(routes::publisher_routes())

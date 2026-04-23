@@ -34,6 +34,7 @@ mod track_deployment;
 mod webhook;
 mod wizard;
 mod shell;
+mod plugins;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -588,6 +589,39 @@ pub enum Commands {
         #[arg(long, short = 'o')]
         output: Option<String>,
     },
+
+    /// Track contract deployment status until confirmed or timeout (#524)
+    TrackDeployment {
+        /// On-chain contract ID
+        #[arg(long)]
+        contract_id: String,
+
+        /// Stellar network (mainnet | testnet | futurenet)
+        #[arg(long, default_value = "testnet")]
+        network: String,
+
+        /// Optional transaction hash to track (polls transaction endpoints first)
+        #[arg(long)]
+        tx_hash: Option<String>,
+
+        /// Maximum wait time in seconds before exiting with code 2
+        #[arg(long, default_value_t = 60)]
+        wait_timeout: u64,
+
+        /// Output machine-readable JSON status
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Plugin management (install, configure, run)
+    Plugins {
+        #[command(subcommand)]
+        action: PluginCommands,
+    },
+
+    /// External command (may be provided by an installed plugin)
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 /// Sub-commands for the `network` group
@@ -839,6 +873,87 @@ pub enum StateSubcommands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// Sub-commands for the `plugins` group
+#[derive(Debug, Subcommand)]
+pub enum PluginCommands {
+    /// List installed plugins and their commands
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Browse the registry marketplace
+    Marketplace {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Install a plugin from the registry
+    Install {
+        /// Plugin name
+        name: String,
+        /// Optional version (defaults to marketplace version)
+        #[arg(long)]
+        version: Option<String>,
+    },
+
+    /// Uninstall an installed plugin
+    Uninstall {
+        /// Plugin name
+        name: String,
+        /// Optional version (defaults to removing all versions)
+        #[arg(long)]
+        version: Option<String>,
+    },
+
+    /// Run a plugin-provided command explicitly
+    Run {
+        /// The plugin command name
+        command: String,
+        /// Arguments passed to the plugin command
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+
+    /// Enable/disable plugins and set per-plugin configuration
+    Config {
+        #[command(subcommand)]
+        action: PluginConfigCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PluginConfigCommands {
+    /// Get the current JSON config for a plugin
+    Get {
+        /// Plugin name
+        name: String,
+    },
+
+    /// Replace the plugin JSON config (must be a JSON object)
+    Set {
+        /// Plugin name
+        name: String,
+        /// JSON object
+        #[arg(long)]
+        json: String,
+    },
+
+    /// Disable a plugin (commands won't be discovered)
+    Disable {
+        /// Plugin name
+        name: String,
+    },
+
+    /// Enable a plugin (default)
+    Enable {
+        /// Plugin name
+        name: String,
     },
 }
 
@@ -1227,6 +1342,113 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
             // We could call shell::run here again but to break recursion we don't.
             println!("{}", "Warning: REPL already running".yellow());
             return Ok(());
+        }
+        Commands::Plugins { action } => match action {
+            PluginCommands::List { json } => {
+                let installed = plugins::discover_installed()?;
+                if json {
+                    let out: Vec<serde_json::Value> = installed
+                        .into_iter()
+                        .map(|p| {
+                            serde_json::json!({
+                                "manifest": p.manifest,
+                                "path": p.manifest_path.to_string_lossy().to_string()
+                            })
+                        })
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "plugins": out }))?);
+                } else {
+                    if installed.is_empty() {
+                        println!("{}", "No plugins installed.".yellow());
+                    } else {
+                        println!("\n{}", "Installed Plugins:".bold().cyan());
+                        println!("{}", "=".repeat(80).cyan());
+                        for p in installed {
+                            let desc = p.manifest.description.clone().unwrap_or_default();
+                            println!(
+                                "  {}@{}  {}",
+                                p.manifest.name.bold(),
+                                p.manifest.version.bright_blue(),
+                                desc.bright_black()
+                            );
+                            for cmd in &p.manifest.commands {
+                                println!(
+                                    "    - {}  {}",
+                                    cmd.name.bright_green(),
+                                    cmd.description.clone().unwrap_or_default().bright_black()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            PluginCommands::Marketplace { json } => {
+                let marketplace = plugins::fetch_marketplace(&cli.api_url).await?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&marketplace)?);
+                } else {
+                    if marketplace.plugins.is_empty() {
+                        println!("{}", "Marketplace returned no plugins.".yellow());
+                    } else {
+                        println!("\n{}", "Plugin Marketplace:".bold().cyan());
+                        println!("{}", "=".repeat(80).cyan());
+                        for p in marketplace.plugins {
+                            println!(
+                                "  {}@{}  {}",
+                                p.name.bold(),
+                                p.version.bright_blue(),
+                                p.description.unwrap_or_default().bright_black()
+                            );
+                            for cmd in p.commands {
+                                println!(
+                                    "    - {}  {}",
+                                    cmd.name.bright_green(),
+                                    cmd.description.unwrap_or_default().bright_black()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            PluginCommands::Install { name, version } => {
+                plugins::install_from_registry(&cli.api_url, &name, version.as_deref()).await?;
+            }
+            PluginCommands::Uninstall { name, version } => {
+                plugins::uninstall(&name, version.as_deref())?;
+            }
+            PluginCommands::Run { command, args } => {
+                let result =
+                    plugins::run_installed_command(&cli.api_url, &network.to_string(), &command, args)
+                        .await?;
+                print!("{}", result.stdout);
+            }
+            PluginCommands::Config { action } => match action {
+                PluginConfigCommands::Get { name } => {
+                    let cfg = plugins::get_plugin_config(&name)?;
+                    println!("{}", serde_json::to_string_pretty(&cfg)?);
+                }
+                PluginConfigCommands::Set { name, json } => {
+                    plugins::set_plugin_config_json(&name, &json)?;
+                    println!("{} Updated config for {}", "✓".green(), name.bold());
+                }
+                PluginConfigCommands::Disable { name } => {
+                    plugins::set_plugin_enabled(&name, false)?;
+                    println!("{} Disabled {}", "✓".green(), name.bold());
+                }
+                PluginConfigCommands::Enable { name } => {
+                    plugins::set_plugin_enabled(&name, true)?;
+                    println!("{} Enabled {}", "✓".green(), name.bold());
+                }
+            },
+        },
+        Commands::External(args) => {
+            if args.is_empty() {
+                anyhow::bail!("No external command provided");
+            }
+            let cmd = args[0].clone();
+            let rest = args.into_iter().skip(1).collect::<Vec<_>>();
+            let result = plugins::run_installed_command(&cli.api_url, &network.to_string(), &cmd, rest).await?;
+            print!("{}", result.stdout);
         }
         Commands::Search {
             query,
