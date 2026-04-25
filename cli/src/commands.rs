@@ -550,7 +550,6 @@ pub async fn publish(
     Ok(())
 }
 
-pub async fn list(api_url: &str, limit: usize, network: Network, json: bool) -> Result<()> {
 fn detect_test_command(contract_dir: &Path) -> Option<String> {
     if contract_dir.join("Cargo.toml").exists() {
         return Some("cargo test".to_string());
@@ -574,17 +573,22 @@ fn summarize_failure(stdout: &str, stderr: &str) -> Vec<String> {
     let combined = format!("{}\n{}", stdout, stderr).to_lowercase();
 
     if combined.contains("failed") || combined.contains("panic") {
-        suggestions.push("Review failing test output and fix assertions or runtime errors.".to_string());
+        suggestions
+            .push("Review failing test output and fix assertions or runtime errors.".to_string());
     }
     if combined.contains("not found") || combined.contains("no such file") {
         suggestions.push("Check file paths and project setup before running tests.".to_string());
     }
     if combined.contains("permission") {
-        suggestions.push("Verify file permissions and execution rights for test tools.".to_string());
+        suggestions
+            .push("Verify file permissions and execution rights for test tools.".to_string());
     }
 
     if suggestions.is_empty() {
-        suggestions.push("Inspect test logs above for the first concrete error and address it first.".to_string());
+        suggestions.push(
+            "Inspect test logs above for the first concrete error and address it first."
+                .to_string(),
+        );
     }
 
     suggestions
@@ -621,8 +625,12 @@ fn parse_tarpaulin_percent(report: &serde_json::Value) -> Option<f64> {
 fn run_rust_coverage(contract_dir: &Path) -> Result<Option<f64>> {
     let output_dir = contract_dir.join(".soroban-registry").join("coverage");
     if !output_dir.exists() {
-        fs::create_dir_all(&output_dir)
-            .with_context(|| format!("Failed to create coverage output dir: {}", output_dir.display()))?;
+        fs::create_dir_all(&output_dir).with_context(|| {
+            format!(
+                "Failed to create coverage output dir: {}",
+                output_dir.display()
+            )
+        })?;
     }
 
     let output_dir_str = output_dir.to_string_lossy().to_string();
@@ -645,14 +653,162 @@ fn run_rust_coverage(contract_dir: &Path) -> Result<Option<f64>> {
                 return Ok(None);
             }
 
-            let content = fs::read_to_string(&report_path)
-                .with_context(|| format!("Failed reading coverage report: {}", report_path.display()))?;
-            let json: serde_json::Value = serde_json::from_str(&content)
-                .with_context(|| format!("Failed parsing coverage report: {}", report_path.display()))?;
+            let content = fs::read_to_string(&report_path).with_context(|| {
+                format!("Failed reading coverage report: {}", report_path.display())
+            })?;
+            let json: serde_json::Value = serde_json::from_str(&content).with_context(|| {
+                format!("Failed parsing coverage report: {}", report_path.display())
+            })?;
             Ok(parse_tarpaulin_percent(&json))
         }
         _ => Ok(None),
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TestSuiteOptions<'a> {
+    pub test_file: Option<&'a str>,
+    pub contract_path: &'a str,
+    pub test_command: Option<&'a str>,
+    pub junit_output: Option<&'a str>,
+    pub show_coverage: bool,
+    pub verbose: bool,
+    pub require_coverage: bool,
+    pub coverage_threshold: f64,
+    pub setup_hook: Option<&'a str>,
+    pub teardown_hook: Option<&'a str>,
+    pub mock_config: Option<&'a str>,
+    pub report_output: Option<&'a str>,
+    pub profile_output: Option<&'a str>,
+    pub load_iterations: u32,
+}
+
+fn run_shell_hook(label: &str, command: &str, contract_dir: &Path) -> Result<()> {
+    println!("{} {} {}", "→".cyan(), label.bold(), command.bright_blue());
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(contract_dir)
+        .status()
+        .with_context(|| format!("Failed to execute {} hook: {}", label, command))?;
+
+    if !status.success() {
+        anyhow::bail!("{} hook failed: {}", label, command);
+    }
+
+    Ok(())
+}
+
+fn read_mock_config(path: &str) -> Result<serde_json::Value> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read mock config: {}", path))?;
+    if path.ends_with(".yaml") || path.ends_with(".yml") {
+        serde_yaml::from_str(&raw)
+            .with_context(|| format!("Failed to parse YAML mock config: {}", path))
+    } else {
+        serde_json::from_str(&raw)
+            .with_context(|| format!("Failed to parse JSON mock config: {}", path))
+    }
+}
+
+pub async fn run_test_suite(options: TestSuiteOptions<'_>) -> Result<()> {
+    let contract_dir = Path::new(options.contract_path);
+    let started_at = chrono::Utc::now();
+    let wall_clock = std::time::Instant::now();
+
+    if let Some(setup_hook) = options.setup_hook {
+        run_shell_hook("Setup hook", setup_hook, contract_dir)?;
+    }
+
+    let mock_summary = if let Some(mock_config) = options.mock_config {
+        let parsed = read_mock_config(mock_config)?;
+        let service_count = parsed
+            .get("services")
+            .and_then(|services| services.as_array())
+            .map(|services| services.len())
+            .unwrap_or(0);
+        println!(
+            "{} Loaded mock config {} ({} service definitions)",
+            "✓".green(),
+            mock_config,
+            service_count
+        );
+        Some(serde_json::json!({
+            "path": mock_config,
+            "service_count": service_count,
+        }))
+    } else {
+        None
+    };
+
+    if options.load_iterations > 1 {
+        println!(
+            "{} Load profile enabled with {} iterations",
+            "→".cyan(),
+            options.load_iterations
+        );
+    }
+
+    let result = if let Some(test_file) = options.test_file {
+        run_tests(
+            test_file,
+            Some(options.contract_path),
+            options.junit_output,
+            options.show_coverage,
+            options.verbose,
+        )
+        .await
+    } else {
+        run_contract_tests(
+            options.contract_path,
+            options.test_command,
+            options.require_coverage,
+            options.coverage_threshold,
+            options.show_coverage,
+        )
+        .await
+    };
+
+    let duration_ms = wall_clock.elapsed().as_millis();
+    let error_message = result.as_ref().err().map(|err| err.to_string());
+
+    if let Some(report_output) = options.report_output {
+        let report = serde_json::json!({
+            "started_at": started_at,
+            "contract_path": options.contract_path,
+            "test_file": options.test_file,
+            "load_iterations": options.load_iterations,
+            "passed": result.is_ok(),
+            "duration_ms": duration_ms,
+            "mocking": mock_summary,
+            "error": error_message,
+        });
+        fs::write(report_output, serde_json::to_string_pretty(&report)?)
+            .with_context(|| format!("Failed to write test report: {}", report_output))?;
+        println!("{} Test report written to {}", "✓".green(), report_output);
+    }
+
+    if let Some(profile_output) = options.profile_output {
+        let profile = serde_json::json!({
+            "contract_path": options.contract_path,
+            "load_iterations": options.load_iterations,
+            "duration_ms": duration_ms,
+            "timestamp": chrono::Utc::now(),
+        });
+        fs::write(profile_output, serde_json::to_string_pretty(&profile)?)
+            .with_context(|| format!("Failed to write test profile: {}", profile_output))?;
+        println!("{} Test profile written to {}", "✓".green(), profile_output);
+    }
+
+    let teardown_result = if let Some(teardown_hook) = options.teardown_hook {
+        run_shell_hook("Teardown hook", teardown_hook, contract_dir)
+    } else {
+        Ok(())
+    };
+
+    result?;
+    teardown_result?;
+    Ok(())
 }
 
 pub async fn run_contract_tests(
@@ -767,8 +923,11 @@ mod contract_test_helpers_tests {
     #[test]
     fn detect_test_command_prefers_cargo_when_cargo_toml_exists() {
         let dir = tempfile::tempdir().expect("tempdir should be created");
-        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname='x'\nversion='0.1.0'")
-            .expect("Cargo.toml should be created");
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname='x'\nversion='0.1.0'",
+        )
+        .expect("Cargo.toml should be created");
 
         let detected = detect_test_command(dir.path());
         assert_eq!(detected.as_deref(), Some("cargo test"));
@@ -1951,176 +2110,176 @@ mod flamegraph_and_network_tests {
     use std::fs;
     use std::time::Duration;
 
-        fn sample_profile() -> profiler::ProfileData {
-            let mut functions = HashMap::new();
-            functions.insert(
-                "main".to_string(),
-                profiler::FunctionProfile {
-                    name: "main".to_string(),
-                    total_time: Duration::from_millis(10),
-                    call_count: 1,
-                    avg_time: Duration::from_millis(10),
-                    min_time: Duration::from_millis(10),
-                    max_time: Duration::from_millis(10),
-                    children: vec![],
-                },
-            );
+    fn sample_profile() -> profiler::ProfileData {
+        let mut functions = HashMap::new();
+        functions.insert(
+            "main".to_string(),
+            profiler::FunctionProfile {
+                name: "main".to_string(),
+                total_time: Duration::from_millis(10),
+                call_count: 1,
+                avg_time: Duration::from_millis(10),
+                min_time: Duration::from_millis(10),
+                max_time: Duration::from_millis(10),
+                children: vec![],
+            },
+        );
 
-            profiler::ProfileData {
-                contract_path: "contract.rs".to_string(),
-                method: Some("main".to_string()),
-                timestamp: "2026-01-01T00:00:00Z".to_string(),
-                total_duration: Duration::from_millis(10),
-                functions,
-                call_stack: vec![],
-                overhead_percent: 0.0,
-            }
+        profiler::ProfileData {
+            contract_path: "contract.rs".to_string(),
+            method: Some("main".to_string()),
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            total_duration: Duration::from_millis(10),
+            functions,
+            call_stack: vec![],
+            overhead_percent: 0.0,
         }
+    }
 
-        fn write_sample_contract(temp_dir: &tempfile::TempDir) -> String {
-            let contract_path = temp_dir.path().join("sample_contract.rs");
-            fs::write(
-                &contract_path,
-                "pub fn main() {}\nfn helper_one() {}\nfn helper_two() {}\n",
-            )
-            .expect("failed to write sample contract");
-            contract_path.to_string_lossy().into_owned()
-        }
+    fn write_sample_contract(temp_dir: &tempfile::TempDir) -> String {
+        let contract_path = temp_dir.path().join("sample_contract.rs");
+        fs::write(
+            &contract_path,
+            "pub fn main() {}\nfn helper_one() {}\nfn helper_two() {}\n",
+        )
+        .expect("failed to write sample contract");
+        contract_path.to_string_lossy().into_owned()
+    }
 
-        #[test]
-        fn test_network_parsing() {
-            assert_eq!("mainnet".parse::<Network>().unwrap(), Network::Mainnet);
-            assert_eq!("testnet".parse::<Network>().unwrap(), Network::Testnet);
-            assert_eq!("futurenet".parse::<Network>().unwrap(), Network::Futurenet);
-            assert_eq!("Mainnet".parse::<Network>().unwrap(), Network::Mainnet); // Case insensitive
-            assert!("invalid".parse::<Network>().is_err());
-        }
+    #[test]
+    fn test_network_parsing() {
+        assert_eq!("mainnet".parse::<Network>().unwrap(), Network::Mainnet);
+        assert_eq!("testnet".parse::<Network>().unwrap(), Network::Testnet);
+        assert_eq!("futurenet".parse::<Network>().unwrap(), Network::Futurenet);
+        assert_eq!("Mainnet".parse::<Network>().unwrap(), Network::Mainnet); // Case insensitive
+        assert!("invalid".parse::<Network>().is_err());
+    }
 
-        #[test]
-        fn generate_flame_graph_file_writes_svg_for_valid_path() {
-            let profile = sample_profile();
-            let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-            let output_path = temp_dir.path().join("flamegraph-output.svg");
-            let output_path_str = output_path.to_string_lossy().into_owned();
+    #[test]
+    fn generate_flame_graph_file_writes_svg_for_valid_path() {
+        let profile = sample_profile();
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let output_path = temp_dir.path().join("flamegraph-output.svg");
+        let output_path_str = output_path.to_string_lossy().into_owned();
 
-            generate_flame_graph_file(&profile, &output_path_str)
-                .expect("expected flame graph generation to succeed");
-            assert!(output_path.exists(), "expected output file to exist");
-        }
+        generate_flame_graph_file(&profile, &output_path_str)
+            .expect("expected flame graph generation to succeed");
+        assert!(output_path.exists(), "expected output file to exist");
+    }
 
-        #[test]
-        fn generate_flame_graph_file_returns_error_for_invalid_path() {
-            let profile = sample_profile();
-            let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-            let invalid_output = temp_dir
-                .path()
-                .join("missing-dir")
-                .join("flamegraph-output.svg");
-            let invalid_output_str = invalid_output.to_string_lossy().into_owned();
+    #[test]
+    fn generate_flame_graph_file_returns_error_for_invalid_path() {
+        let profile = sample_profile();
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let invalid_output = temp_dir
+            .path()
+            .join("missing-dir")
+            .join("flamegraph-output.svg");
+        let invalid_output_str = invalid_output.to_string_lossy().into_owned();
 
-            let err = generate_flame_graph_file(&profile, &invalid_output_str)
-                .expect_err("expected flame graph generation to fail for invalid path");
-            assert!(
-                err.to_string().contains("Failed to write flame graph"),
-                "unexpected error: {err}"
-            );
-        }
+        let err = generate_flame_graph_file(&profile, &invalid_output_str)
+            .expect_err("expected flame graph generation to fail for invalid path");
+        assert!(
+            err.to_string().contains("Failed to write flame graph"),
+            "unexpected error: {err}"
+        );
+    }
 
-        #[test]
-        fn profile_writes_json_and_flamegraph_outputs() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-            let contract_path = write_sample_contract(&temp_dir);
-            let json_output = temp_dir.path().join("profile-output.json");
-            let flame_output = temp_dir.path().join("profile-output.svg");
-            let json_output_str = json_output.to_string_lossy().into_owned();
-            let flame_output_str = flame_output.to_string_lossy().into_owned();
+    #[test]
+    fn profile_writes_json_and_flamegraph_outputs() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let contract_path = write_sample_contract(&temp_dir);
+        let json_output = temp_dir.path().join("profile-output.json");
+        let flame_output = temp_dir.path().join("profile-output.svg");
+        let json_output_str = json_output.to_string_lossy().into_owned();
+        let flame_output_str = flame_output.to_string_lossy().into_owned();
 
-            profile(
-                &contract_path,
-                None,
-                Some(&json_output_str),
-                Some(&flame_output_str),
-                None,
-                true,
-            )
-            .expect("expected profiling to succeed");
+        profile(
+            &contract_path,
+            None,
+            Some(&json_output_str),
+            Some(&flame_output_str),
+            None,
+            true,
+        )
+        .expect("expected profiling to succeed");
 
-            assert!(
-                json_output.exists(),
-                "expected JSON profile output to exist"
-            );
-            assert!(
-                flame_output.exists(),
-                "expected flame graph output to exist"
-            );
-        }
+        assert!(
+            json_output.exists(),
+            "expected JSON profile output to exist"
+        );
+        assert!(
+            flame_output.exists(),
+            "expected flame graph output to exist"
+        );
+    }
 
-        #[test]
-        fn profile_supports_baseline_comparison() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-            let contract_path = write_sample_contract(&temp_dir);
-            let baseline_path = temp_dir.path().join("baseline.json");
-            let baseline_path_str = baseline_path.to_string_lossy().into_owned();
+    #[test]
+    fn profile_supports_baseline_comparison() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let contract_path = write_sample_contract(&temp_dir);
+        let baseline_path = temp_dir.path().join("baseline.json");
+        let baseline_path_str = baseline_path.to_string_lossy().into_owned();
 
-            let baseline_json = serde_json::to_string_pretty(&sample_profile())
-                .expect("failed to serialize baseline");
-            fs::write(&baseline_path, baseline_json).expect("failed to write baseline file");
+        let baseline_json =
+            serde_json::to_string_pretty(&sample_profile()).expect("failed to serialize baseline");
+        fs::write(&baseline_path, baseline_json).expect("failed to write baseline file");
 
-            profile(
-                &contract_path,
-                None,
-                None,
-                None,
-                Some(&baseline_path_str),
-                false,
-            )
-            .expect("expected profiling with baseline comparison to succeed");
-        }
+        profile(
+            &contract_path,
+            None,
+            None,
+            None,
+            Some(&baseline_path_str),
+            false,
+        )
+        .expect("expected profiling with baseline comparison to succeed");
+    }
 
-        #[test]
-        fn profile_returns_error_for_missing_baseline() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-            let contract_path = write_sample_contract(&temp_dir);
-            let missing_baseline = temp_dir.path().join("missing-baseline.json");
-            let missing_baseline_str = missing_baseline.to_string_lossy().into_owned();
+    #[test]
+    fn profile_returns_error_for_missing_baseline() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let contract_path = write_sample_contract(&temp_dir);
+        let missing_baseline = temp_dir.path().join("missing-baseline.json");
+        let missing_baseline_str = missing_baseline.to_string_lossy().into_owned();
 
-            let err = profile(
-                &contract_path,
-                None,
-                None,
-                None,
-                Some(&missing_baseline_str),
-                false,
-            )
-            .expect_err("expected missing baseline to fail");
+        let err = profile(
+            &contract_path,
+            None,
+            None,
+            None,
+            Some(&missing_baseline_str),
+            false,
+        )
+        .expect_err("expected missing baseline to fail");
 
-            assert!(
-                err.to_string()
-                    .contains("Failed to load baseline profile from"),
-                "unexpected error: {err}"
-            );
-        }
+        assert!(
+            err.to_string()
+                .contains("Failed to load baseline profile from"),
+            "unexpected error: {err}"
+        );
+    }
 
-        #[test]
-        fn profile_returns_error_for_unknown_method() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-            let contract_path = write_sample_contract(&temp_dir);
+    #[test]
+    fn profile_returns_error_for_unknown_method() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let contract_path = write_sample_contract(&temp_dir);
 
-            let err = profile(
-                &contract_path,
-                Some("does_not_exist"),
-                None,
-                None,
-                None,
-                false,
-            )
-            .expect_err("expected unknown method to fail");
+        let err = profile(
+            &contract_path,
+            Some("does_not_exist"),
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect_err("expected unknown method to fail");
 
-            assert!(
-                err.to_string().contains("was not found in contract"),
-                "unexpected error: {err}"
-            );
-        }
+        assert!(
+            err.to_string().contains("was not found in contract"),
+            "unexpected error: {err}"
+        );
+    }
 }
 /// Validate a contract function call for type safety
 pub async fn validate_call(

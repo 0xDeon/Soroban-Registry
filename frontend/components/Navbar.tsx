@@ -1,6 +1,6 @@
 'use client';
 
-import { Package, GitBranch, ChevronDown, BarChart2, Users, Menu, X, Layers, Search, Plus, Columns2, ShieldCheck, PieChart, TrendingUp, LogOut, Settings, Zap, Code2, User } from 'lucide-react';
+import { Package, GitBranch, ChevronDown, BarChart2, Users, Menu, X, Layers, Search, Plus, Columns2, ShieldCheck, PieChart, TrendingUp, LogOut, Settings, Zap, Code2, User, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -11,6 +11,7 @@ import NotificationBell from './NotificationBell';
 const NAV_LINKS = [
     { href: '/contracts',       label: 'Browse',  icon: Package   },
     { href: '/compare',         label: 'Compare', icon: Columns2  },
+    { href: '/marketplace',     label: 'Market',  icon: ShoppingCart },
     { href: '/verify-contract', label: 'Verify',  icon: ShieldCheck },
 ] as const;
 
@@ -29,6 +30,7 @@ const QUICK_LINKS = [
     { href: '/analytics',  label: 'Analytics',           icon: PieChart  },
     { href: '/templates',  label: 'Templates',           icon: Layers    },
     { href: '/graph',      label: 'Dependency Graph',    icon: GitBranch },
+    { href: '/marketplace', label: 'Marketplace',       icon: ShoppingCart },
     { href: '/verify-contract', label: 'Verify Contract', icon: ShieldCheck },
 ] as const;
 

@@ -1,10 +1,12 @@
 #![allow(unused_variables)]
 
 mod analyze;
+mod audit_command;
 mod backup;
 mod batch_register;
 mod batch_verify;
 mod cicd;
+mod codegen;
 mod commands;
 mod config;
 mod contract_verify;
@@ -27,14 +29,13 @@ mod package_signing;
 mod patch;
 mod profiler;
 mod release_notes;
+mod shell;
 mod sla;
 mod table_format;
 mod test_framework;
 mod track_deployment;
 mod webhook;
 mod wizard;
-mod shell;
-mod track_deployment;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -257,6 +258,24 @@ pub enum Commands {
         format: String,
     },
 
+    /// Generate client code and docs directly from contract ABI
+    Generate {
+        /// Path to contract WASM file or ABI JSON file
+        contract_path: String,
+
+        /// Output language: typescript, rust, json, markdown
+        #[arg(long, default_value = "typescript")]
+        lang: String,
+
+        /// Optional file output path
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+
+        /// Optional markdown documentation output path
+        #[arg(long)]
+        docs_output: Option<String>,
+    },
+
     /// Launch the interactive setup wizard
     Wizard {},
 
@@ -374,6 +393,48 @@ pub enum Commands {
         /// Minimum required coverage percentage (0-100)
         #[arg(long, default_value_t = 0.0)]
         coverage_threshold: f64,
+
+        /// Optional shell command to run before executing tests
+        #[arg(long)]
+        setup_hook: Option<String>,
+
+        /// Optional shell command to run after executing tests
+        #[arg(long)]
+        teardown_hook: Option<String>,
+
+        /// Optional JSON or YAML file describing mock services used in the run
+        #[arg(long)]
+        mock_config: Option<String>,
+
+        /// Optional JSON report output for the full test session
+        #[arg(long)]
+        report: Option<String>,
+
+        /// Optional JSON profile output for load-test metadata
+        #[arg(long)]
+        profile_output: Option<String>,
+
+        /// Number of iterations to simulate for load testing
+        #[arg(long, default_value_t = 1)]
+        load_iterations: u32,
+    },
+
+    /// Run a local contract security audit
+    Audit {
+        /// Path to contract file or project directory
+        contract_path: String,
+
+        /// Output format: text, json, markdown
+        #[arg(long, default_value = "text")]
+        format: String,
+
+        /// Optional report output file
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+
+        /// Fail the command when findings at or above this severity are present
+        #[arg(long)]
+        fail_on: Option<String>,
     },
 
     /// SLA compliance monitoring
@@ -1127,24 +1188,28 @@ async fn main() -> Result<()> {
 
 pub async fn handle_command(cli: Cli) -> Result<()> {
     match cli.command {
-        Commands::Shell { network: shell_network } => {
-            shell::run(&cli.api_url, shell_network).await
-        }
+        Commands::Shell {
+            network: shell_network,
+        } => shell::run(&cli.api_url, shell_network).await,
         _ => {
-             // ── Resolve network ───────────────────────────────────────────────────────
+            // ── Resolve network ───────────────────────────────────────────────────────
             let cfg_network = config::resolve_network(cli.network.clone())?;
             let mut net_str = cfg_network.to_string();
             if net_str == "auto" {
                 net_str = "mainnet".to_string();
             }
             let network: commands::Network = net_str.parse().unwrap();
-            
+
             dispatch_command(cli, network, cfg_network).await
         }
     }
 }
 
-pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network: crate::config::Network) -> Result<()> {
+pub async fn dispatch_command(
+    cli: Cli,
+    network: commands::Network,
+    cfg_network: crate::config::Network,
+) -> Result<()> {
     log::debug!("Network: {:?}", network);
 
     match cli.command {
@@ -1381,6 +1446,26 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
             );
             commands::openapi(&contract_path, &output, &format)?;
         }
+        Commands::Generate {
+            contract_path,
+            lang,
+            output,
+            docs_output,
+        } => {
+            log::debug!(
+                "Command: generate | contract_path={} lang={} output={:?} docs_output={:?}",
+                contract_path,
+                lang,
+                output,
+                docs_output
+            );
+            codegen::generate(
+                &contract_path,
+                &lang,
+                output.as_deref(),
+                docs_output.as_deref(),
+            )?;
+        }
         Commands::Wizard {} => {
             log::debug!("Command: wizard");
             wizard::run(&cli.api_url).await?;
@@ -1585,26 +1670,50 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
             verbose,
             require_coverage,
             coverage_threshold,
+            setup_hook,
+            teardown_hook,
+            mock_config,
+            report,
+            profile_output,
+            load_iterations,
         } => {
-            if let Some(test_file) = test_file {
-                commands::run_tests(
-                    &test_file,
-                    contract_path.as_deref(),
-                    junit.as_deref(),
-                    coverage,
-                    verbose,
-                )
-                .await?;
-            } else {
-                commands::run_contract_tests(
-                    contract_path.as_deref().unwrap_or("."),
-                    test_command.as_deref(),
-                    require_coverage,
-                    coverage_threshold,
-                    coverage,
-                )
-                .await?;
-            }
+            commands::run_test_suite(commands::TestSuiteOptions {
+                test_file: test_file.as_deref(),
+                contract_path: contract_path.as_deref().unwrap_or("."),
+                test_command: test_command.as_deref(),
+                junit_output: junit.as_deref(),
+                show_coverage: coverage,
+                verbose,
+                require_coverage,
+                coverage_threshold,
+                setup_hook: setup_hook.as_deref(),
+                teardown_hook: teardown_hook.as_deref(),
+                mock_config: mock_config.as_deref(),
+                report_output: report.as_deref(),
+                profile_output: profile_output.as_deref(),
+                load_iterations,
+            })
+            .await?;
+        }
+        Commands::Audit {
+            contract_path,
+            format,
+            output,
+            fail_on,
+        } => {
+            log::debug!(
+                "Command: audit | contract_path={} format={} output={:?} fail_on={:?}",
+                contract_path,
+                format,
+                output,
+                fail_on
+            );
+            audit_command::run(
+                &contract_path,
+                &format,
+                output.as_deref(),
+                fail_on.as_deref(),
+            )?;
         }
         Commands::Sla { action } => match action {
             SlaCommands::Record {
