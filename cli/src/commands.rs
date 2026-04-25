@@ -667,6 +667,152 @@ fn run_rust_coverage(contract_dir: &Path) -> Result<Option<f64>> {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TestSuiteOptions<'a> {
+    pub test_file: Option<&'a str>,
+    pub contract_path: &'a str,
+    pub test_command: Option<&'a str>,
+    pub junit_output: Option<&'a str>,
+    pub show_coverage: bool,
+    pub verbose: bool,
+    pub require_coverage: bool,
+    pub coverage_threshold: f64,
+    pub setup_hook: Option<&'a str>,
+    pub teardown_hook: Option<&'a str>,
+    pub mock_config: Option<&'a str>,
+    pub report_output: Option<&'a str>,
+    pub profile_output: Option<&'a str>,
+    pub load_iterations: u32,
+}
+
+fn run_shell_hook(label: &str, command: &str, contract_dir: &Path) -> Result<()> {
+    println!("{} {} {}", "→".cyan(), label.bold(), command.bright_blue());
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(contract_dir)
+        .status()
+        .with_context(|| format!("Failed to execute {} hook: {}", label, command))?;
+
+    if !status.success() {
+        anyhow::bail!("{} hook failed: {}", label, command);
+    }
+
+    Ok(())
+}
+
+fn read_mock_config(path: &str) -> Result<serde_json::Value> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read mock config: {}", path))?;
+    if path.ends_with(".yaml") || path.ends_with(".yml") {
+        serde_yaml::from_str(&raw)
+            .with_context(|| format!("Failed to parse YAML mock config: {}", path))
+    } else {
+        serde_json::from_str(&raw)
+            .with_context(|| format!("Failed to parse JSON mock config: {}", path))
+    }
+}
+
+pub async fn run_test_suite(options: TestSuiteOptions<'_>) -> Result<()> {
+    let contract_dir = Path::new(options.contract_path);
+    let started_at = chrono::Utc::now();
+    let wall_clock = std::time::Instant::now();
+
+    if let Some(setup_hook) = options.setup_hook {
+        run_shell_hook("Setup hook", setup_hook, contract_dir)?;
+    }
+
+    let mock_summary = if let Some(mock_config) = options.mock_config {
+        let parsed = read_mock_config(mock_config)?;
+        let service_count = parsed
+            .get("services")
+            .and_then(|services| services.as_array())
+            .map(|services| services.len())
+            .unwrap_or(0);
+        println!(
+            "{} Loaded mock config {} ({} service definitions)",
+            "✓".green(),
+            mock_config,
+            service_count
+        );
+        Some(serde_json::json!({
+            "path": mock_config,
+            "service_count": service_count,
+        }))
+    } else {
+        None
+    };
+
+    if options.load_iterations > 1 {
+        println!(
+            "{} Load profile enabled with {} iterations",
+            "→".cyan(),
+            options.load_iterations
+        );
+    }
+
+    let result = if let Some(test_file) = options.test_file {
+        run_tests(
+            test_file,
+            Some(options.contract_path),
+            options.junit_output,
+            options.show_coverage,
+            options.verbose,
+        )
+        .await
+    } else {
+        run_contract_tests(
+            options.contract_path,
+            options.test_command,
+            options.require_coverage,
+            options.coverage_threshold,
+            options.show_coverage,
+        )
+        .await
+    };
+
+    let duration_ms = wall_clock.elapsed().as_millis();
+    let error_message = result.as_ref().err().map(|err| err.to_string());
+
+    if let Some(report_output) = options.report_output {
+        let report = serde_json::json!({
+            "started_at": started_at,
+            "contract_path": options.contract_path,
+            "test_file": options.test_file,
+            "load_iterations": options.load_iterations,
+            "passed": result.is_ok(),
+            "duration_ms": duration_ms,
+            "mocking": mock_summary,
+            "error": error_message,
+        });
+        fs::write(report_output, serde_json::to_string_pretty(&report)?)
+            .with_context(|| format!("Failed to write test report: {}", report_output))?;
+        println!("{} Test report written to {}", "✓".green(), report_output);
+    }
+
+    if let Some(profile_output) = options.profile_output {
+        let profile = serde_json::json!({
+            "contract_path": options.contract_path,
+            "load_iterations": options.load_iterations,
+            "duration_ms": duration_ms,
+            "timestamp": chrono::Utc::now(),
+        });
+        fs::write(profile_output, serde_json::to_string_pretty(&profile)?)
+            .with_context(|| format!("Failed to write test profile: {}", profile_output))?;
+        println!("{} Test profile written to {}", "✓".green(), profile_output);
+    }
+
+    let teardown_result = if let Some(teardown_hook) = options.teardown_hook {
+        run_shell_hook("Teardown hook", teardown_hook, contract_dir)
+    } else {
+        Ok(())
+    };
+
+    result?;
+    teardown_result?;
+    Ok(())
+}
+
 pub async fn run_contract_tests(
     contract_path: &str,
     test_command: Option<&str>,

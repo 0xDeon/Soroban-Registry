@@ -1,10 +1,12 @@
 #![allow(unused_variables)]
 
 mod analyze;
+mod audit_command;
 mod backup;
 mod batch_register;
 mod batch_verify;
 mod cicd;
+mod codegen;
 mod commands;
 mod config;
 mod contract_verify;
@@ -394,6 +396,48 @@ pub enum Commands {
         /// Minimum required coverage percentage (0-100)
         #[arg(long, default_value_t = 0.0)]
         coverage_threshold: f64,
+
+        /// Optional shell command to run before executing tests
+        #[arg(long)]
+        setup_hook: Option<String>,
+
+        /// Optional shell command to run after executing tests
+        #[arg(long)]
+        teardown_hook: Option<String>,
+
+        /// Optional JSON or YAML file describing mock services used in the run
+        #[arg(long)]
+        mock_config: Option<String>,
+
+        /// Optional JSON report output for the full test session
+        #[arg(long)]
+        report: Option<String>,
+
+        /// Optional JSON profile output for load-test metadata
+        #[arg(long)]
+        profile_output: Option<String>,
+
+        /// Number of iterations to simulate for load testing
+        #[arg(long, default_value_t = 1)]
+        load_iterations: u32,
+    },
+
+    /// Run a local contract security audit
+    Audit {
+        /// Path to contract file or project directory
+        contract_path: String,
+
+        /// Output format: text, json, markdown
+        #[arg(long, default_value = "text")]
+        format: String,
+
+        /// Optional report output file
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+
+        /// Fail the command when findings at or above this severity are present
+        #[arg(long)]
+        fail_on: Option<String>,
     },
 
     /// SLA compliance monitoring
@@ -1992,26 +2036,50 @@ pub async fn dispatch_command(
             verbose,
             require_coverage,
             coverage_threshold,
+            setup_hook,
+            teardown_hook,
+            mock_config,
+            report,
+            profile_output,
+            load_iterations,
         } => {
-            if let Some(test_file) = test_file {
-                commands::run_tests(
-                    &test_file,
-                    contract_path.as_deref(),
-                    junit.as_deref(),
-                    coverage,
-                    verbose,
-                )
-                .await?;
-            } else {
-                commands::run_contract_tests(
-                    contract_path.as_deref().unwrap_or("."),
-                    test_command.as_deref(),
-                    require_coverage,
-                    coverage_threshold,
-                    coverage,
-                )
-                .await?;
-            }
+            commands::run_test_suite(commands::TestSuiteOptions {
+                test_file: test_file.as_deref(),
+                contract_path: contract_path.as_deref().unwrap_or("."),
+                test_command: test_command.as_deref(),
+                junit_output: junit.as_deref(),
+                show_coverage: coverage,
+                verbose,
+                require_coverage,
+                coverage_threshold,
+                setup_hook: setup_hook.as_deref(),
+                teardown_hook: teardown_hook.as_deref(),
+                mock_config: mock_config.as_deref(),
+                report_output: report.as_deref(),
+                profile_output: profile_output.as_deref(),
+                load_iterations,
+            })
+            .await?;
+        }
+        Commands::Audit {
+            contract_path,
+            format,
+            output,
+            fail_on,
+        } => {
+            log::debug!(
+                "Command: audit | contract_path={} format={} output={:?} fail_on={:?}",
+                contract_path,
+                format,
+                output,
+                fail_on
+            );
+            audit_command::run(
+                &contract_path,
+                &format,
+                output.as_deref(),
+                fail_on.as_deref(),
+            )?;
         }
         Commands::Sla { action } => match action {
             SlaCommands::Record {
