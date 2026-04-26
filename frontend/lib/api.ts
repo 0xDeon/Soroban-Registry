@@ -244,7 +244,7 @@ export interface AnalyticsEvent {
   contract_id: string;
   user_address: string | null;
   network: Network | null;
-  metadata: any;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -252,6 +252,7 @@ export interface ActivityFeedParams {
   cursor?: string;
   limit?: number;
   event_type?: AnalyticsEventType;
+  contract_id?: string;
 }
 
 export interface ActivityFeedResponse {
@@ -658,6 +659,7 @@ export const api = {
 
     const queryParams = new URLSearchParams();
     if (params?.query) queryParams.append("query", params.query);
+    if (params?.contract_id) queryParams.append("contract_id", params.contract_id);
     if (params?.network) queryParams.append("network", params.network);
     params?.networks?.forEach((network) => queryParams.append("networks", network));
     if (params?.verified_only !== undefined)
@@ -918,6 +920,7 @@ export const api = {
     if (params?.cursor) search.set("cursor", params.cursor);
     if (params?.limit != null) search.set("limit", String(params.limit));
     if (params?.event_type) search.set("event_type", params.event_type);
+    if (params?.contract_id) search.set("contract_id", params.contract_id);
 
     const qs = search.toString();
     return handleApiCall<ActivityFeedResponse>(
@@ -1157,11 +1160,18 @@ export const api = {
     );
   },
 
-  // Interoperability analysis endpoint
-  async getCompatibility(id: string): Promise<ContractInteroperabilityResponse> {
-    return handleApiCall<ContractInteroperabilityResponse>(
+  // Version upgrade compatibility endpoint
+  async getCompatibility(id: string): Promise<CompatibilityMatrix> {
+    return handleApiCall<CompatibilityMatrix>(
       () => fetch(`${API_URL}/api/contracts/${id}/compatibility`),
       `/api/contracts/${id}/compatibility`
+    );
+  },
+
+  async getInteroperability(id: string): Promise<ContractInteroperabilityResponse> {
+    return handleApiCall<ContractInteroperabilityResponse>(
+      () => fetch(`${API_URL}/api/contracts/${id}/interoperability`),
+      `/api/contracts/${id}/interoperability`
     );
   },
 
@@ -1638,21 +1648,26 @@ export interface ContractInteroperabilityResponse {
 // ─── Compatibility Matrix ────────────────────────────────────────────────────
 
 export interface CompatibilityEntry {
-  target_contract_id: string;
-  target_contract_stellar_id: string;
-  target_contract_name: string;
   target_version: string;
+  has_breaking_changes: boolean;
+  breaking_changes: string[];
+  breaking_change_count: number;
   stellar_version?: string;
   is_compatible: boolean;
 }
 
-/** Legacy compatibility matrix shape retained for matrix/export workflows. */
+export interface CompatibilityRow {
+  source_version: string;
+  targets: CompatibilityEntry[];
+}
+
 export interface CompatibilityMatrix {
   contract_id: string;
-  /** Keyed by source version string */
-  versions: Record<string, CompatibilityEntry[]>;
+  contract_stellar_id: string;
+  version_order: string[];
+  rows: CompatibilityRow[];
   warnings: string[];
-  total_entries: number;
+  total_pairs: number;
 }
 
 export interface AddCompatibilityRequest {
