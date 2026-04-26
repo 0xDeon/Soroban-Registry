@@ -87,6 +87,9 @@ pub enum Commands {
         /// Filter by contract category (e.g. DEX, token, lending, oracle)
         #[arg(long)]
         category: Option<String>,
+        /// Sort field (e.g. name, created_at, network)
+        #[arg(long)]
+        sort: Option<String>,
         /// Maximum number of results to return
         #[arg(long, default_value = "20")]
         limit: usize,
@@ -1597,6 +1600,7 @@ pub async fn dispatch_command(
             verified_only,
             network: filter_networks,
             category,
+            sort,
             limit,
             offset,
             json,
@@ -1605,11 +1609,12 @@ pub async fn dispatch_command(
                 .map(|n| n.split(',').map(|s| s.trim().to_string()).collect())
                 .unwrap_or_default();
             log::debug!(
-                "Command: search | query={:?} verified_only={} networks={:?} category={:?}",
+                "Command: search | query={:?} verified_only={} networks={:?} category={:?} sort={:?}",
                 query,
                 verified_only,
                 networks_vec,
-                category
+                category,
+                sort
             );
             commands::search(
                 &cli.api_url,
@@ -1618,6 +1623,7 @@ pub async fn dispatch_command(
                 verified_only,
                 networks_vec,
                 category.as_deref(),
+                sort.as_deref(),
                 limit,
                 offset,
                 json,
