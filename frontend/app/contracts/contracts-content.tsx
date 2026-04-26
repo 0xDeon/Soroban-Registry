@@ -8,13 +8,19 @@ import ContractCardSkeleton from '@/components/ContractCardSkeleton';
 import { ActiveFilters } from '@/components/contracts/ActiveFilters';
 import { FilterPanel } from '@/components/contracts/FilterPanel';
 import { ResultsCount } from '@/components/contracts/ResultsCount';
-import { SortDropdown, SortBy } from '@/components/contracts/SortDropdown';
+import { SortDropdown } from '@/components/contracts/SortDropdown';
 import TagAutocomplete from '@/components/tags/TagAutocomplete';
 import { Filter, Package, SlidersHorizontal, X, Sparkles, CheckCircle, Users } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import QueryBuilder from '@/components/contracts/QueryBuilder';
 import FavoriteSearches from '@/components/contracts/FavoriteSearches';
+import {
+  DEFAULT_SORT_PREFERENCE,
+  persistSortPreference,
+  resolveInitialSortPreference,
+  type SortBy,
+} from './sort-utils';
 import {
   combineAdvancedQueryWithFilters,
   parseAdvancedContractQuery,
@@ -141,8 +147,8 @@ const EMPTY_CONTRACTS_RESPONSE: ContractsResponse = {
   total_pages: 1,
 };
 
-const DEFAULT_SORT_BY: SortBy = 'created_at';
-const DEFAULT_SORT_ORDER: ContractsUiFilters['sort_order'] = 'desc';
+const DEFAULT_SORT_BY: SortBy = DEFAULT_SORT_PREFERENCE.sort_by;
+const DEFAULT_SORT_ORDER: ContractsUiFilters['sort_order'] = DEFAULT_SORT_PREFERENCE.sort_order;
 
 export function getInitialFilters(searchParams: URLSearchParams): ContractsUiFilters {
   const query = searchParams.get('query') || searchParams.get('q') || '';
@@ -168,8 +174,8 @@ export function getInitialFilters(searchParams: URLSearchParams): ContractsUiFil
     author: searchParams.get('author') || '',
     networks,
     verified_only: searchParams.get('verified_only') === 'true',
-    sort_by: validSortBys.includes(sortBy) ? sortBy : (query ? 'relevance' : DEFAULT_SORT_BY),
-    sort_order: sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : DEFAULT_SORT_ORDER,
+    sort_by: sortPreference.sort_by,
+    sort_order: sortPreference.sort_order,
     page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
     page_size: DEFAULT_PAGE_SIZE,
   };
@@ -247,6 +253,14 @@ export function ContractsContent() {
     router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
   }, [query, categories, languages, tags, networks, author, verified_only, sort_by, sort_order, page, page_size, pathname, router]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    persistSortPreference(
+      { sort_by: filters.sort_by, sort_order: filters.sort_order },
+      window.localStorage,
+    );
+  }, [filters.sort_by, filters.sort_order]);
+
   const parsedQuery = useMemo(() => parseAdvancedContractQuery(query), [query]);
   const useAdvancedSearch = Boolean(query.trim()) && parsedQuery.usesOr && Boolean(parsedQuery.queryNode);
 
@@ -293,10 +307,9 @@ export function ContractsContent() {
           verified_only,
         });
 
-        const backendSortBy = sort_by === 'downloads' ? 'interactions' : sort_by;
         return api.advancedSearchContracts({
           query: combined,
-          sort_by: backendSortBy,
+          sort_by,
           sort_order,
           limit: page_size,
           offset: (page - 1) * page_size,
@@ -619,19 +632,15 @@ export function ContractsContent() {
           <div className="flex flex-wrap items-center gap-2">
             <SortDropdown
               value={filters.sort_by}
+              order={filters.sort_order}
               onChange={(value) =>
                 setFilters((current) => ({ ...current, sort_by: value, page: 1 }))
               }
+              onOrderChange={(value) =>
+                setFilters((current) => ({ ...current, sort_order: value, page: 1 }))
+              }
               showRelevance={!!filters.query}
             />
-            <select
-              value={filters.sort_order}
-              onChange={(e) => setFilters(prev => ({ ...prev, sort_order: e.target.value as 'asc' | 'desc', page: 1 }))}
-              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select>
             <button
               type="button"
               onClick={() => setMobileFiltersOpen(true)}
@@ -647,7 +656,7 @@ export function ContractsContent() {
 
         <div className="flex gap-8 mt-6">
           {/* Sidebar filters (desktop) */}
-          <aside className="hidden md:flex flex-col w-72 flex-shrink-0 gap-6">
+          <aside className="hidden md:flex flex-col w-72 shrink-0 gap-6">
             <div className="gradient-border-card p-5 sticky top-20">
               <div className="flex items-center gap-2 mb-5">
                 <Filter className="w-4 h-4 text-primary" />
@@ -699,7 +708,7 @@ export function ContractsContent() {
                   className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8 animate-in fade-in duration-300"
                 >
                   {effectiveData.items.map((contract: Contract) => (
-                    <ContractCard key={contract.id} contract={contract} />
+                    <ContractCard key={contract.id} contract={contract} sortBy={filters.sort_by} />
                   ))}
                 </div>
 

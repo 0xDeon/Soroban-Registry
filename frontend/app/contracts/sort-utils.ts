@@ -1,6 +1,6 @@
 import type { Contract } from '@/lib/api';
 
-export type SortBy = 'name' | 'created_at' | 'popularity' | 'rating' | 'relevance';
+export type SortBy = 'created_at' | 'updated_at' | 'popularity' | 'relevance';
 export type SortOrder = 'asc' | 'desc';
 
 export interface SortPreference {
@@ -16,10 +16,9 @@ export const DEFAULT_SORT_PREFERENCE: SortPreference = {
 };
 
 function isSortBy(value: string | null | undefined): value is SortBy {
-  return value === 'name'
-    || value === 'created_at'
+  return value === 'created_at'
+    || value === 'updated_at'
     || value === 'popularity'
-    || value === 'rating'
     || value === 'relevance';
 }
 
@@ -105,28 +104,13 @@ export function sortContracts(
     let comparison = 0;
 
     switch (preference.sort_by) {
-      case 'name':
-        comparison = compareText(a.name, b.name);
-        break;
       case 'popularity':
         comparison = getNumericValue(a, ['popularity_score', 'interaction_count', 'deployment_count'])
           - getNumericValue(b, ['popularity_score', 'interaction_count', 'deployment_count']);
         break;
-      case 'rating': {
-        const ratingComparison =
-          getNumericValue(a, ['average_rating', 'avg_rating', 'rating'])
-          - getNumericValue(b, ['average_rating', 'avg_rating', 'rating']);
-
-        if (ratingComparison !== 0) {
-          comparison = ratingComparison;
-          break;
-        }
-
-        comparison =
-          getNumericValue(a, ['review_count'])
-          - getNumericValue(b, ['review_count']);
+      case 'updated_at':
+        comparison = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
         break;
-      }
       case 'relevance':
         comparison =
           getNumericValue(a, ['relevance_score', 'popularity_score'])

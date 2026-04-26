@@ -6,7 +6,10 @@ import {
   Copy,
   ExternalLink,
   Eye,
+  Flame,
   Layers3,
+  RefreshCw,
+  Sparkles,
   Tag,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -23,9 +26,17 @@ import FavoriteButton from './FavoriteButton';
 
 interface ContractCardProps {
   contract: Contract;
+  sortBy?: 'created_at' | 'updated_at' | 'popularity' | 'relevance';
 }
 
-export default function ContractCard({ contract }: ContractCardProps) {
+const SORT_ICON_META = {
+  created_at: { icon: Clock, label: 'Sorted by newest' },
+  updated_at: { icon: RefreshCw, label: 'Sorted by last updated' },
+  popularity: { icon: Flame, label: 'Sorted by popularity' },
+  relevance: { icon: Sparkles, label: 'Sorted by relevance' },
+} as const;
+
+export default function ContractCard({ contract, sortBy }: ContractCardProps) {
   const { t } = useTranslation('common');
   const { logEvent } = useAnalytics();
   const router = useRouter();
@@ -104,6 +115,16 @@ export default function ContractCard({ contract }: ContractCardProps) {
           <div className="absolute inset-0 bg-linear-to-br from-primary/5 to-secondary/5 opacity-0 transition-opacity group-hover:opacity-100" />
 
           <div className="relative flex h-full flex-col p-6">
+            {sortBy && SORT_ICON_META[sortBy] && (
+              <span
+                className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-2 py-1 text-[10px] font-semibold text-muted-foreground"
+                aria-label={SORT_ICON_META[sortBy].label}
+                title={SORT_ICON_META[sortBy].label}
+              >
+                {React.createElement(SORT_ICON_META[sortBy].icon, { className: 'h-3 w-3' })}
+              </span>
+            )}
+
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center gap-2">
