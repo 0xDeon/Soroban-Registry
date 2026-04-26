@@ -3525,3 +3525,141 @@ pub fn sla_status(id: &str) -> Result<()> {
 
     Ok(())
 }
+
+pub async fn snapshot_create(api_url: &str, contract_id: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/api/contracts/{}/snapshots", api_url, contract_id);
+
+    println!("\n{}", "Creating contract snapshot...".bold().cyan());
+
+    let response = client
+        .post(&url)
+        .send()
+        .await
+        .context("Failed to create snapshot")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Failed to create snapshot: {}",
+            response.text().await.unwrap_or_default()
+        );
+    }
+
+    let snapshot: serde_json::Value = response.json().await?;
+
+    println!("{}", "✓ Snapshot created successfully!".green().bold());
+    println!("  {}: {}", "ID".bold(), snapshot["id"].as_str().unwrap_or(""));
+    println!("  {}: {}", "Version".bold(), snapshot["version_number"].as_i64().unwrap_or(0));
+    println!("  {}: {}", "Created At".bold(), snapshot["created_at"].as_str().unwrap_or(""));
+    println!();
+
+    Ok(())
+}
+
+pub async fn snapshot_list(api_url: &str, contract_id: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/api/contracts/{}/snapshots", api_url, contract_id);
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .context("Failed to list snapshots")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Failed to list snapshots: {}",
+            response.text().await.unwrap_or_default()
+        );
+    }
+
+    let snapshots: Vec<serde_json::Value> = response.json().await?;
+
+    println!("\n{}", "Contract Snapshots:".bold().cyan());
+    println!("{}", "=".repeat(80).cyan());
+
+    if snapshots.is_empty() {
+        println!("{}", "No snapshots found.".yellow());
+        return Ok(());
+    }
+
+    for s in snapshots {
+        println!(
+            "  v{} - {} [{}]",
+            s["version_number"].as_i64().unwrap_or(0),
+            s["created_at"].as_str().unwrap_or("").bright_black(),
+            s["id"].as_str().unwrap_or("").cyan()
+        );
+    }
+    println!();
+
+    Ok(())
+}
+
+pub async fn snapshot_get(api_url: &str, contract_id: &str, timestamp: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/api/contracts/{}/snapshots?timestamp={}", api_url, contract_id, timestamp);
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .context("Failed to fetch snapshot")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Failed to fetch snapshot: {}",
+            response.text().await.unwrap_or_default()
+        );
+    }
+
+    let snapshot: serde_json::Value = response.json().await?;
+    println!("\n{}", "Snapshot Details:".bold().cyan());
+    println!("{}", "=".repeat(80).cyan());
+    println!("{}", serde_json::to_string_pretty(&snapshot)?.green());
+    println!();
+
+    Ok(())
+}
+
+pub async fn snapshot_diff(api_url: &str, contract_id: &str, v1: i32, v2: i32) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/api/contracts/{}/versions/{}/diff/{}", api_url, contract_id, v1, v2);
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .context("Failed to fetch diff")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Failed to fetch diff: {}",
+            response.text().await.unwrap_or_default()
+        );
+    }
+
+    let diff: shared::models::VersionDiff = response.json().await?;
+
+    println!("\n{}", format!("Diff between v{} and v{}:", v1, v2).bold().cyan());
+    println!("{}", "=".repeat(80).cyan());
+
+    if diff.added.is_empty() && diff.removed.is_empty() && diff.modified.is_empty() {
+        println!("{}", "No differences found.".green());
+        return Ok(());
+    }
+
+    for add in diff.added {
+        println!("  {} {}: {}", "+".green().bold(), add.field.bold(), add.to.to_string().green());
+    }
+    for rm in diff.removed {
+        println!("  {} {}: {}", "-".red().bold(), rm.field.bold(), rm.from.to_string().red());
+    }
+    for modif in diff.modified {
+        println!("  {} {}: {} -> {}", "~".yellow().bold(), modif.field.bold(), modif.from.to_string().red(), modif.to.to_string().green());
+    }
+
+    println!();
+
+    Ok(())
+}
