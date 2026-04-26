@@ -4354,11 +4354,10 @@ pub async fn get_trending_contracts(
         )
         .collect();
 
-    Ok(Json(json!({
-        "timeframe": timeframe,
-        "limit": limit,
-        "trending": trending
-    })))
+    // Return the trending array directly so the frontend can use it as-is.
+    // The frontend analytics page does `setTrending(trendJson)` and passes
+    // the result directly to TrendingContractsTable which expects an array.
+    Ok(Json(json!(trending)))
 }
 
 #[utoipa::path(
