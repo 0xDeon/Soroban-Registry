@@ -185,6 +185,7 @@ export default function Navbar() {
     const lng = i18n.resolvedLanguage || 'en';
     const pathname = usePathname() ?? '';
     const scrolled = useScrolled();
+    const { favoritesCount } = useFavorites();
 
     const [mobileOpen,    setMobileOpen]    = useState(false);
     const [exploreOpen,   setExploreOpen]   = useState(false);
@@ -353,6 +354,24 @@ export default function Navbar() {
                             <LanguageSelector lng={lng} />
                             <ThemeToggle />
                             <NotificationBell />
+
+                            {/* Favorites link */}
+                            <Link
+                                href="/favorites"
+                                aria-label="Your favorites"
+                                className={`relative p-1.5 rounded-md transition-colors ${
+                                    isActive('/favorites')
+                                        ? 'text-primary bg-primary/10'
+                                        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                                }`}
+                            >
+                                <Star className="w-5 h-5" />
+                                {favoritesCount > 0 && (
+                                    <span className="absolute top-0.5 right-0.5 flex items-center justify-center min-w-[1rem] h-4 px-0.5 text-[10px] font-bold text-primary-foreground bg-primary rounded-full">
+                                        {favoritesCount > 99 ? '99+' : favoritesCount}
+                                    </span>
+                                )}
+                            </Link>
 
                             {/* Profile dropdown */}
                             <div

@@ -1514,6 +1514,36 @@ export const api = {
       `/api/comments/${commentId}/flag`
     );
   },
+
+  // ── Favorites preferences (authenticated) ──────────────────────────────
+
+  async getPreferences(token: string): Promise<UserFavoritesPreferences> {
+    return handleApiCall<UserFavoritesPreferences>(
+      () =>
+        fetch(`${API_URL}/api/me/preferences`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      '/api/me/preferences'
+    );
+  },
+
+  async updatePreferences(
+    token: string,
+    favorites: string[]
+  ): Promise<UserFavoritesPreferences> {
+    return handleApiCall<UserFavoritesPreferences>(
+      () =>
+        fetch(`${API_URL}/api/me/preferences`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ favorites }),
+        }),
+      '/api/me/preferences'
+    );
+  },
 };
 
 export interface Template {
@@ -1892,6 +1922,10 @@ export interface FavoriteSearch {
   query_json: QueryNode;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserFavoritesPreferences {
+  favorites: string[];
 }
 
 export interface SaveFavoriteSearchRequest {
