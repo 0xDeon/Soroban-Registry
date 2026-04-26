@@ -1,6 +1,86 @@
 #![warn(unused_imports)]
 
-use api::*;
+mod ab_test_handlers;
+mod aggregation;
+mod analytics;
+mod auth;
+mod auth_handlers;
+mod batch_verify_handlers;
+mod breaking_changes;
+mod cache;
+mod canary_handlers;
+mod compatibility_testing_handlers;
+mod contract_events;
+mod contributor_handlers;
+mod db_monitoring;
+mod governance_handlers;
+mod graphql;
+mod interoperability;
+mod interoperability_handlers;
+
+mod activity_feed_handlers;
+mod activity_feed_routes;
+mod analytics_handlers;
+mod category_handlers;
+mod custom_metrics_handlers;
+mod dependency;
+mod dependency_handlers;
+mod deprecation_handlers;
+mod error;
+mod events;
+mod favorites_handlers;
+mod handlers;
+mod health;
+pub mod health_monitor;
+#[cfg(test)]
+mod health_tests;
+mod incident_handlers;
+mod incident_routes;
+mod metrics;
+mod metrics_handler;
+mod migration_handlers;
+mod models;
+mod multisig_handlers;
+mod multisig_routes;
+mod mutation_testing_handlers; // Issue #619
+mod onchain_verification;
+#[cfg(feature = "openapi")]
+mod openapi;
+mod org_handlers;
+mod patch_handlers;
+mod plugin_marketplace_handlers;
+mod performance_handlers;
+mod rate_limit;
+mod recommendation_handlers;
+mod release_notes_handlers;
+mod release_notes_routes;
+pub mod request_tracing;
+mod resource_handlers;
+mod resource_tracking;
+mod routes;
+pub mod security_log;
+pub mod signing_handlers;
+mod similarity_handlers;
+mod simulation;
+mod simulation_handlers;
+mod state;
+
+mod clone_federation_handlers;
+mod formal_verification;
+mod formal_verification_handlers;
+mod graph_analysis;
+mod graph_analysis_handlers;
+mod pagination;
+mod gas_estimation_handlers;
+mod security_scan_handlers;
+mod subscription_handlers;
+mod type_safety;
+mod validation;
+mod webhook_delivery;
+mod websocket;
+mod quota_handlers;
+mod verification_handlers;
+mod zk_proof_handlers;
 
 use anyhow::Result;
 use axum::extract::{Request, State};
@@ -108,7 +188,11 @@ async fn main() -> Result<()> {
     let je = job_engine.clone();
     tokio::spawn(async move { je.run_worker(job_rx).await });
 
-    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone()).await?;
+    // Issue #727: create rate limiter before AppState so it can be shared
+    let rate_limit_state = std::sync::Arc::new(RateLimitState::from_env());
+    rate_limit_state.spawn_eviction_task();
+
+    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone(), rate_limit_state.clone()).await?;
 
     // Initialize GraphQL schema
     let schema = graphql::schema::build_schema(state.clone());
@@ -133,9 +217,6 @@ async fn main() -> Result<()> {
 
     // Warm up the cache
     state.cache.clone().warm_up(pool.clone());
-
-    let rate_limit_state = RateLimitState::from_env();
-    rate_limit_state.spawn_eviction_task();
 
     let allowed_origins = std::env::var("ALLOWED_ORIGINS").unwrap_or_else(|_| {
         "http://localhost:3000,https://soroban-registry.vercel.app".to_string()
@@ -203,6 +284,7 @@ async fn main() -> Result<()> {
         .merge(routes::graph_analysis_routes())
         .merge(routes::formal_verification_routes())
         .merge(routes::verification_status_routes())
+        .merge(routes::quota_routes())
         .merge(routes::validator_routes())
         .merge(release_notes_routes::release_notes_routes())
         .route(
@@ -226,7 +308,7 @@ async fn main() -> Result<()> {
             track_in_flight_middleware,
         ))
         .layer(middleware::from_fn_with_state(
-            rate_limit_state,
+            (*rate_limit_state).clone(),
             rate_limit::rate_limit_middleware,
         ))
         .layer(cors)
