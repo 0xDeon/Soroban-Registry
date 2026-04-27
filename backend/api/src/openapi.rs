@@ -14,7 +14,7 @@ use utoipa::OpenApi;
     paths(
         handlers::health_check,
         handlers::get_stats,
-        handlers::list_contracts,
+        handlers::list_contracts_openapi_marker,
         handlers::export_contract_metadata,
         handlers::get_contract_export_status,
         handlers::get_contracts_batch,

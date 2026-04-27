@@ -53,6 +53,7 @@ pub struct Contract {
     /// Overall verification status for the contract (unverified, pending, verified, failed)
     pub verification_status: VerificationStatus,
     pub category: Option<String>,
+    #[sqlx(skip)]
     #[serde(default)]
     pub tags: Vec<Tag>,
     pub created_at: DateTime<Utc>,
@@ -544,6 +545,7 @@ pub struct GraphNode {
     pub network: Network,
     pub is_verified: bool,
     pub category: Option<String>,
+    #[sqlx(skip)]
     pub tags: Vec<Tag>,
 }
 
@@ -1053,6 +1055,7 @@ pub struct ContractMetadataExportRecord {
     pub network: String,
     pub is_verified: bool,
     pub category: Option<String>,
+    #[sqlx(skip)]
     pub tags: Vec<Tag>,
     pub maturity: Option<String>,
     pub health_score: i32,
@@ -2287,6 +2290,7 @@ pub struct TrendingContract {
     pub network: Network,
     pub is_verified: bool,
     pub category: Option<String>,
+    #[sqlx(skip)]
     #[serde(default)]
     pub tags: Vec<Tag>,
     pub created_at: DateTime<Utc>,

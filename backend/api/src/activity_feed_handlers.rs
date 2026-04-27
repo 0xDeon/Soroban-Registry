@@ -44,7 +44,7 @@ pub async fn get_activity_feed(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| crate::error::db_err("fetch activity feed", e))?;
+        .map_err(|e| ApiError::internal(format!("fetch activity feed failed: {}", e)))?;
 
     // 2. Count total matches for this filter
     let mut count_builder: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(
@@ -65,7 +65,7 @@ pub async fn get_activity_feed(
         .build_query_scalar()
         .fetch_one(&state.db)
         .await
-        .map_err(|e| crate::error::db_err("count activity feed", e))?;
+        .map_err(|e| ApiError::internal(format!("count activity feed failed: {}", e)))?;
 
     let next_cursor = events.last().map(|e| e.created_at);
 
