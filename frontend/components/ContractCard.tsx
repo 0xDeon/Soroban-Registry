@@ -1,4 +1,4 @@
-import type { Contract } from '@/lib/api';
+import type { Contract } from '@/types';
 import {
   Check,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Sparkles,
   Tag,
+  Star,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -44,14 +45,14 @@ export default function ContractCard({ contract, sortBy }: ContractCardProps) {
   const [quickViewOpen, setQuickViewOpen] = React.useState(false);
 
   const networkColors = {
-    mainnet: 'bg-green-500/10 text-green-600 border-green-500/20',
-    testnet: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-    futurenet: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
+    mainnet: 'bg-green-500/10 text-green-500 border-green-500/20',
+    testnet: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+    futurenet: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
   };
   const networkDots = {
-    mainnet: 'bg-green-500',
-    testnet: 'bg-blue-500',
-    futurenet: 'bg-purple-500',
+    mainnet: 'bg-green-400',
+    testnet: 'bg-blue-400',
+    futurenet: 'bg-purple-400',
   };
 
   const address = formatContractId(contract.contract_id);
@@ -131,7 +132,7 @@ export default function ContractCard({ contract, sortBy }: ContractCardProps) {
                   <h3 className="truncate text-lg font-semibold text-foreground transition-colors group-hover:text-primary">
                     {contract.name}
                   </h3>
-                  {contract.is_verified && <VerificationBadge status="approved" />}
+                  <VerificationBadge status={contract.is_verified ? 'approved' : 'unverified'} level={contract.verification_level} />
                 </div>
                 <p className="font-mono text-xs text-muted-foreground">
                   {address}
@@ -151,16 +152,7 @@ export default function ContractCard({ contract, sortBy }: ContractCardProps) {
                 <Tag className="h-3 w-3 shrink-0" />
                 <span className="truncate">{categoryLabel}</span>
               </span>
-              <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                  contract.is_verified
-                    ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                    : 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20'
-                }`}
-              >
-                <CheckCircle2 className="h-3 w-3" />
-                {contract.is_verified ? t('contractCard.verified') : t('contractCard.pending')}
-              </span>
+              <VerificationBadge status={contract.is_verified ? 'approved' : 'unverified'} level={contract.verification_level} />
             </div>
 
             {contract.description && (
@@ -221,7 +213,14 @@ export default function ContractCard({ contract, sortBy }: ContractCardProps) {
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 <span>{copied ? t('contractCard.copied') : t('contractCard.copyAddress')}</span>
               </button>
-              <FavoriteButton contractId={contract.id} size="sm" />
+              <div className="ml-auto flex items-center gap-1">
+                <FavoriteButton contractId={contract.id} size="sm" />
+                {contract.favorites_count !== undefined && (
+                  <span className="text-xs text-muted-foreground ml-1 font-medium bg-accent px-1.5 py-0.5 rounded-md">
+                    {contract.favorites_count}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>

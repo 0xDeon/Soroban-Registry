@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, ContractSearchParams, Contract, SemanticContractSearchResponse } from '@/lib/api';
+import type { ContractSearchParams, Contract, SemanticContractSearchResponse } from '@/types';
+import { api } from '@/lib/api';
 import ContractCard from '@/components/ContractCard';
 import ContractCardSkeleton from '@/components/ContractCardSkeleton';
 import { ActiveFilters } from '@/components/contracts/ActiveFilters';
@@ -15,6 +16,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import QueryBuilder from '@/components/contracts/QueryBuilder';
 import FavoriteSearches from '@/components/contracts/FavoriteSearches';
+import { useFavorites } from '@/hooks/useFavorites';
 import {
   DEFAULT_SORT_PREFERENCE,
   persistSortPreference,
@@ -131,6 +133,7 @@ export type ContractsUiFilters = {
   author: string;
   networks: NonNullable<ContractSearchParams['network']>[];
   verified_only: boolean;
+  favorites_only: boolean;
   sort_by: SortBy;
   sort_order: 'asc' | 'desc';
   page: number;
@@ -174,6 +177,7 @@ export function getInitialFilters(searchParams: URLSearchParams): ContractsUiFil
     author: searchParams.get('author') || '',
     networks,
     verified_only: searchParams.get('verified_only') === 'true',
+    favorites_only: searchParams.get('favorites_only') === 'true',
     sort_by: sortPreference.sort_by,
     sort_order: sortPreference.sort_order,
     page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
@@ -233,7 +237,9 @@ export function ContractsContent() {
     getInitialFilters(new URLSearchParams(searchParams?.toString() ?? '')),
   );
 
-  const { query, categories, languages, tags, networks, author, verified_only, sort_by, sort_order, page, page_size } = filters;
+  const { favorites } = useFavorites();
+
+  const { query, categories, languages, tags, networks, author, verified_only, favorites_only, sort_by, sort_order, page, page_size } = filters;
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -244,6 +250,7 @@ export function ContractsContent() {
     networks.forEach((network) => params.append('network', network));
     if (author) params.set('author', author);
     if (verified_only) params.set('verified_only', 'true');
+    if (favorites_only) params.set('favorites_only', 'true');
     if (sort_by !== DEFAULT_SORT_BY || query) params.set('sort_by', sort_by);
     if (sort_order !== DEFAULT_SORT_ORDER) params.set('sort_order', sort_order);
     if (page > 1) params.set('page', String(page));
@@ -251,7 +258,7 @@ export function ContractsContent() {
 
     const next = params.toString();
     router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
-  }, [query, categories, languages, tags, networks, author, verified_only, sort_by, sort_order, page, page_size, pathname, router]);
+  }, [query, categories, languages, tags, networks, author, verified_only, favorites_only, sort_by, sort_order, page, page_size, pathname, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -274,6 +281,8 @@ export function ContractsContent() {
       networks,
       author,
       verified_only,
+      favorites_only,
+      favoritesList: favorites_only ? favorites : [],
       sort_by,
       sort_order,
       page,
@@ -292,6 +301,7 @@ export function ContractsContent() {
       tags,
       useAdvancedSearch,
       verified_only,
+      favorites_only,
     ],
   );
 
@@ -305,6 +315,8 @@ export function ContractsContent() {
           tags,
           author,
           verified_only,
+          favorites_only: favorites_only || undefined,
+          favorites_list: favorites_only ? favorites : undefined,
         });
 
         return api.advancedSearchContracts({
@@ -324,6 +336,8 @@ export function ContractsContent() {
         networks: networks.length > 0 ? (networks as Array<'mainnet' | 'testnet' | 'futurenet'>) : undefined,
         author: author || undefined,
         verified_only: verified_only || undefined,
+        favorites_only: favorites_only || undefined,
+        favorites_list: favorites_only ? favorites : undefined,
         sort_by,
         sort_order,
         page,
@@ -386,6 +400,7 @@ export function ContractsContent() {
       author: '',
       networks: [],
       verified_only: false,
+      favorites_only: false,
       sort_by: DEFAULT_SORT_BY,
       sort_order: DEFAULT_SORT_ORDER,
       page: 1,
@@ -471,6 +486,15 @@ export function ContractsContent() {
       });
     }
 
+    if (filters.favorites_only) {
+      chips.push({
+        id: 'favorites',
+        label: 'Favorites only',
+        onRemove: () =>
+          setFilters((current) => ({ ...current, favorites_only: false, page: 1 })),
+      });
+    }
+
     if (filters.sort_by !== DEFAULT_SORT_BY || filters.sort_order !== DEFAULT_SORT_ORDER) {
       chips.push({
         id: 'sort',
@@ -531,6 +555,9 @@ export function ContractsContent() {
     verifiedOnly: filters.verified_only,
     onVerifiedChange: (value: boolean) =>
       setFilters((current) => ({ ...current, verified_only: value, page: 1 })),
+    favoritesOnly: filters.favorites_only,
+    onFavoritesChange: (value: boolean) =>
+      setFilters((current) => ({ ...current, favorites_only: value, page: 1 })),
     activeFilterCount: activeFilterChips.length,
     onResetAll: clearAllFilters,
   };
@@ -662,7 +689,7 @@ export function ContractsContent() {
                 <Filter className="w-4 h-4 text-primary" />
                 <h3 className="text-sm font-semibold text-foreground">Filters</h3>
               </div>
-              
+
               <>
                 <FilterPanel {...filterPanelProps} />
                 <div className="mt-5 pt-4 border-t border-border">

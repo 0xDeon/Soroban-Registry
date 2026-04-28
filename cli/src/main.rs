@@ -36,18 +36,16 @@ mod shell;
 mod sla;
 mod table_format;
 mod test_framework;
-mod shell;
-mod track_deployment;
 mod track_deployment;
 mod webhook;
 mod wizard;
-mod shell;
 mod plugins;
 mod deploy;
 mod upgrade;
 mod compare;
 mod verification;
 mod user_config;
+mod version;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -284,29 +282,53 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Export a contract archive (.tar.gz)
+    /// Export contract registry data or a contract archive
     Export {
-        /// Contract registry ID (UUID)
+        /// Contract registry ID (UUID or on-chain address). Omit to export a filtered contract list.
         #[arg(long)]
-        id: String,
+        id: Option<String>,
 
-        /// Output archive path
-        #[arg(long, default_value = "contract-export.tar.gz")]
-        output: String,
+        /// Output file path. Defaults to contracts-export.<format> or contract-export.tar.gz for archive.
+        #[arg(long, short = 'o')]
+        output: Option<String>,
 
         /// Path to contract source directory
         #[arg(long, default_value = ".")]
         contract_dir: String,
+
+        /// Export format: json, csv, markdown, or archive
+        #[arg(long, short = 'f')]
+        format: Option<String>,
+
+        /// Filter to apply to registry exports, e.g. --filter network=mainnet --filter verified_only=true
+        #[arg(long = "filter")]
+        filters: Vec<String>,
+
+        /// Number of contracts to fetch per API page for list exports
+        #[arg(long, default_value_t = 100)]
+        page_size: usize,
     },
 
-    /// Import a contract from an archive
+    /// Import contract data from a file (JSON, CSV, or Archive)
     Import {
-        /// Path to the archive file
-        archive: String,
+        /// Path to the import file
+        file: String,
 
-        /// Directory to extract into
+        /// Format of the file (json | csv | archive). If omitted, inferred from extension.
+        #[arg(long)]
+        format: Option<String>,
+
+        /// Directory to extract into (only for archive format)
         #[arg(long, default_value = "./imported")]
         output_dir: String,
+
+        /// Validate the data before importing
+        #[arg(long)]
+        validate: bool,
+
+        /// Perform a dry run without actually importing
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Generate documentation from a contract WASM
@@ -1413,6 +1435,22 @@ pub enum ContractCommands {
         #[arg(long)]
         json: bool,
     },
+    
+    /// Display detailed information about a contract
+    ///
+    /// Usage: soroban-registry contract details <address> --network <network> [--json]
+    Details {
+        /// On-chain contract address to inspect
+        address: String,
+
+        /// Stellar network (mainnet | testnet | futurenet)
+        #[arg(long, default_value = "mainnet")]
+        network: String,
+
+        /// Output results as machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Sub-commands for the `webhook` group
@@ -1635,6 +1673,26 @@ pub async fn dispatch_command(
             // We could call shell::run here again but to break recursion we don't.
             println!("{}", "Warning: REPL already running".yellow());
             return Ok(());
+        }
+        Commands::TrackDeployment {
+            contract_id,
+            network,
+            tx_hash,
+            wait_timeout,
+            json,
+        } => {
+            log::debug!(
+                "Command: track-deployment | contract_id={} network={} tx_hash={:?} wait_timeout={} json={}",
+                contract_id, network, tx_hash, wait_timeout, json
+            );
+            track_deployment::run(
+                &cli.api_url,
+                &contract_id,
+                &network,
+                tx_hash.as_deref(),
+                wait_timeout,
+                json,
+            ).await?;
         }
         Commands::Plugins { action } => match action {
             PluginCommands::List { json } => {
@@ -1958,20 +2016,40 @@ pub async fn dispatch_command(
             id,
             output,
             contract_dir,
-        } => {
-            log::debug!("Command: export | id={} output={}", id, output);
-            commands::export(&cli.api_url, &id, &output, &contract_dir).await?;
-        }
-        Commands::Import {
-            archive,
-            output_dir,
+            format,
+            filters,
+            page_size,
         } => {
             log::debug!(
-                "Command: import | archive={} output_dir={}",
-                archive,
-                output_dir
+                "Command: export | id={:?} output={:?} format={:?}",
+                id,
+                output,
+                format
             );
-            commands::import(&cli.api_url, &archive, network, &output_dir).await?;
+            commands::export(
+                &cli.api_url,
+                id.as_deref(),
+                output.as_deref(),
+                &contract_dir,
+                format.as_deref(),
+                filters,
+                page_size,
+            )
+            .await?;
+        }
+        Commands::Import {
+            file,
+            format,
+            output_dir,
+            validate,
+            dry_run,
+        } => {
+            let network = cli.network.as_deref();
+            log::debug!(
+                "Command: import | file={} format={:?} output_dir={} validate={} dry_run={}",
+                file, format, output_dir, validate, dry_run
+            );
+            crate::import::run(&cli.api_url, &file, format.as_deref(), network, &output_dir, validate, dry_run).await?;
         }
         Commands::Doc {
             contract_path,
@@ -2619,6 +2697,19 @@ pub async fn dispatch_command(
                     json
                 );
                 contract_verify::run(&cli.api_url, &address, &network, json).await?;
+            }
+            ContractCommands::Details {
+                address,
+                network,
+                json,
+            } => {
+                log::debug!(
+                    "Command: contract details | address={} network={} json={}",
+                    address,
+                    network,
+                    json
+                );
+                contracts::run_details(&cli.api_url, &address, &network, json).await?;
             }
         },
         // ── Release Notes commands ───────────────────────────────────────────
