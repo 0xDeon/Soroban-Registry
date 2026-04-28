@@ -264,6 +264,13 @@ pub static PROCESS_START_TIME: Lazy<IntGauge> =
 pub static BUILD_INFO: Lazy<IntGaugeVec> =
     gauge_vec!("build_info", "Build information", &["version", "commit"]);
 
+// ── Client-side breaker metrics ─────────────────────────────────────────────
+pub static CLIENT_BREAKER_OPEN: Lazy<IntGaugeVec> = gauge_vec!(
+    "client_breaker_open",
+    "Client-side circuit breaker open state (1=open, 0=closed)",
+    &["endpoint"]
+);
+
 // ── SLO ─────────────────────────────────────────────────────────────────────
 pub static SLO_ERROR_BUDGET: Lazy<GaugeVec> = gauge_f64_vec!(
     "slo_error_budget_remaining",
@@ -355,6 +362,7 @@ pub fn register_all(r: &Registry) -> prometheus::Result<()> {
     r.register(Box::new(MULTISIG_REJECTIONS.clone()))?;
     r.register(Box::new(PROCESS_START_TIME.clone()))?;
     r.register(Box::new(BUILD_INFO.clone()))?;
+    r.register(Box::new(CLIENT_BREAKER_OPEN.clone()))?;
     r.register(Box::new(SLO_ERROR_BUDGET.clone()))?;
     r.register(Box::new(SLO_BURN_RATE.clone()))?;
     r.register(Box::new(SLO_AVAILABILITY.clone()))?;

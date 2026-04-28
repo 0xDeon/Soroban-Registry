@@ -39,6 +39,7 @@ pub mod multisig_routes;
 pub mod mutation_testing_handlers;
 pub mod notification_handlers;
 pub mod notification_routes;
+pub mod ml_detector;
 pub mod openapi;
 pub mod org_handlers;
 pub mod pagination;

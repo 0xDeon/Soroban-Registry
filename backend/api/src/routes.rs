@@ -2,6 +2,7 @@
 use crate::openapi;
 use crate::{
     ab_test_handlers, analytics_handlers, auth, auth_handlers, batch_verify_handlers,
+    client_observability_handlers,
     breaking_changes, canary_handlers, category_handlers, clone_federation_handlers,
     compatibility_testing_handlers, contract_events, custom_metrics_handlers, deprecation_handlers,
     error_logging, formal_verification_handlers, gas_estimation_handlers, governance_handlers,
@@ -104,6 +105,7 @@ fn release_notes_routes() -> Router<AppState> {
 pub fn observability_routes() -> Router<AppState> {
     Router::new()
         .route("/metrics", get(metrics_handler::metrics_endpoint))
+    .route("/api/observability/client_breaker", post(client_observability_handlers::report_client_breaker))
         .route("/api/errors/report", post(error_logging::report_error))
         .route("/api/errors/dashboard", get(error_logging::error_dashboard))
 }
